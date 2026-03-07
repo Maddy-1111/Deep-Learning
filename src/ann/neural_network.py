@@ -147,8 +147,6 @@ class NeuralNetwork:
 
                 self.update_weights()
 
-            print(f"Epoch {epoch+1} loss {loss}")
-
 
     def evaluate(self, X, y):
 

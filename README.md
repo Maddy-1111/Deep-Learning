@@ -1,22 +1,9 @@
 # Assignment 1: Multi-Layer Perceptron for Image Classification
+- This section contains the model and scripts of a mlp to classify the MNIST dataset.
 
-## Overview
+## GitHub Link:
+- https://github.com/Maddy-1111/Deep-Learning
 
-This assignment requires you to implement a neural network from scratch using only NumPy. You will build all components including layers, activations, optimizers, and loss functions, then train your network on MNIST or Fashion-MNIST datasets.
+## WandB Link:
+- https://wandb.ai/ee23b040-indian-institute-of-technology-madras/da6401_assignment_1/reports/DA6401-Assignment-1--VmlldzoxNjEzNTQzMA
 
-## Learning Objectives
-
-- Understand forward and backward propagation
-- Implement gradient computation manually
-- Implement various optimizers (SGD, Momentum, Adam, Nadam)
-- Work with activation functions and their derivatives
-- Train and evaluate neural networks
-- Log experiments using Weights & Biases
-
-## Contact
-
-For questions or issues, please contact the teaching staff or post on the course forum.
-
----
-
-Good luck with your implementation!
