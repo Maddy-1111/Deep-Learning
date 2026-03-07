@@ -1,0 +1,96 @@
+_wandb:
+    value:
+        cli_version: 0.25.0
+        e:
+            fo1bww81vjizitf0whgcqczpw6dnxjpm:
+                args:
+                    - --dataset
+                    - mnist
+                    - --epochs
+                    - "10"
+                    - --batch_size
+                    - "64"
+                    - --learning_rate
+                    - "0.001"
+                    - --optimizer
+                    - rmsprop
+                    - --hidden_size
+                    - "128"
+                    - "128"
+                    - "64"
+                    - --activation
+                    - relu
+                    - --loss
+                    - cross_entropy
+                    - --weight_init
+                    - xavier
+                    - --wandb_project
+                    - da6401_mlp
+                codePath: src/train.py
+                codePathLocal: train.py
+                cpu_count: 6
+                cpu_count_logical: 12
+                disk:
+                    /:
+                        total: "502392610816"
+                        used: "83126665216"
+                email: ee23b040@smail.iitm.ac.in
+                executable: /home/guest/miniconda3/bin/python
+                git:
+                    commit: 671b6914588cc2eaaa0e82e93c7f132e34a2b5a6
+                    remote: https://github.com/MiRL-IITM/da6401_assignment_1.git
+                host: dkc04
+                memory:
+                    total: "16442253312"
+                os: Linux-6.8.0-101-generic-x86_64-with-glibc2.39
+                program: /home/guest/DA6401/da6401_assignment_1/src/train.py
+                python: CPython 3.13.12
+                root: /home/guest/DA6401/da6401_assignment_1/src
+                startedAt: "2026-03-07T11:47:22.020229Z"
+                writerId: fo1bww81vjizitf0whgcqczpw6dnxjpm
+        m: []
+        python_version: 3.13.12
+        t:
+            "1":
+                - 2
+                - 3
+                - 5
+                - 53
+            "2":
+                - 2
+                - 3
+                - 5
+                - 53
+            "3":
+                - 16
+            "4": 3.13.12
+            "5": 0.25.0
+            "12": 0.25.0
+            "13": linux-x86_64
+activation:
+    value: relu
+batch_size:
+    value: 64
+dataset:
+    value: mnist
+epochs:
+    value: 10
+hidden_size:
+    value:
+        - 128
+        - 128
+        - 64
+learning_rate:
+    value: 0.001
+loss:
+    value: cross_entropy
+model_save_path:
+    value: best_model.npy
+optimizer:
+    value: rmsprop
+wandb_project:
+    value: da6401_mlp
+weight_decay:
+    value: 0
+weight_init:
+    value: xavier
