@@ -87,52 +87,34 @@ class NeuralNetwork:
             A = layer.forward(A)
 
         return A
+    
+    # Helper for the backward funciton
+    def to_one_hot(self, y, num_classes=10):
+        y = np.array(y)
+        if y.ndim == 2 and y.shape[1] == num_classes:
+            return y
+        y = y.flatten().astype(int)
+        one_hot = np.zeros((len(y), num_classes))
+        one_hot[np.arange(len(y)), y] = 1
+        return one_hot
 
 
     def backward(self, y_true, y_pred):
-        """
-        Backward propagation to compute gradients.
-        """
 
-        grad_W_list = []
-        grad_b_list = []
+        y_true = self.to_one_hot(y_true)
+        dA = self.loss_fn.backward(y_pred, y_true)
 
-        m = y_true.shape[0]
-
-        # gradient of loss w.r.t logits
-        if self.loss_name == "cross_entropy":
-
-            # compute softmax
-            logits_shift = y_pred - np.max(y_pred, axis=1, keepdims=True)
-            exp_logits = np.exp(logits_shift)
-            probs = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
-
-            dA = (probs - y_true) / m
-
-        elif self.loss_name == "mse":
-
-            dA = 2 * (y_pred - y_true) / m
-
-        else:
-            raise ValueError("Unsupported loss")
-
-        # backprop through layers
         for layer in reversed(self.layers):
-
             dA = layer.backward(dA)
 
-            grad_W_list.append(layer.grad_W)
-            grad_b_list.append(layer.grad_b)
+        self.grad_W = np.empty(len(self.layers), dtype=object)
+        self.grad_b = np.empty(len(self.layers), dtype=object)
 
-        # convert to numpy object arrays
-        self.grad_W = np.empty(len(grad_W_list), dtype=object)
-        self.grad_b = np.empty(len(grad_b_list), dtype=object)
+        for i, layer in enumerate(reversed(self.layers)):
+            self.grad_W[i] = layer.grad_W
+            self.grad_b[i] = layer.grad_b
 
-        for i, (gw, gb) in enumerate(zip(grad_W_list, grad_b_list)):
-            self.grad_W[i] = gw
-            self.grad_b[i] = gb
-
-        return self.grad_W, self.grad_b  
+        return self.grad_W, self.grad_b
 
 
     def update_weights(self):

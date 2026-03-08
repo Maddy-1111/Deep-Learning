@@ -5,5 +5,5 @@
 - https://github.com/Maddy-1111/Deep-Learning
 
 ## WandB Link:
-- https://wandb.ai/ee23b040-indian-institute-of-technology-madras/da6401_assignment_1/reports/DA6401-Assignment-1--VmlldzoxNjEzNTQzMA
+https://wandb.ai/ee23b040-indian-institute-of-technology-madras/da6401_assignment_1-src/reports/DA6401-Assignment-1--VmlldzoxNjEzNTQzMA/edit?draftId=VmlldzoxNjEzNTY5NA==
 
