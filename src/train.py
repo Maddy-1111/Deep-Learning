@@ -22,11 +22,11 @@ def parse_arguments():
 
     parser.add_argument("--epochs", type=int, default=5)
     
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=128)
 
     parser.add_argument("--learning_rate", type=float, default=0.001)
 
-    parser.add_argument("--optimizer", type=str, default="sgd",
+    parser.add_argument("--optimizer", type=str, default="rmsprop",
                         choices=["sgd", "momentum", "nag", "rmsprop"])
     
     parser.add_argument("--num_layers", type=int, default=None)
@@ -48,6 +48,8 @@ def parse_arguments():
 
     parser.add_argument("--model_save_path", type=str, default="best_model.npy")
 
+    parser.add_argument("--group", type=str, default=None)
+
     return parser.parse_args()
 
 
@@ -61,8 +63,8 @@ def main():
         wandb.init(
             project=args.wandb_project,
             config=vars(args),
-            group=getattr(args, "group", None)
-        )
+            group=getattr(args, "group", None),
+            name=f"{args.loss}")
     except:
         use_wandb = False
 
@@ -103,11 +105,15 @@ def main():
 
         print(f"Epoch {epoch+1} val accuracy: {val_acc}")
 
+        # logits = model.forward(X_train[idx_train])
+        # train_loss = model.loss_fn.forward(logits, y_train[idx_train])
+
         if use_wandb:
             wandb.log({
-                "train_accuracy": train_acc,
-                "val_accuracy": val_acc,
-                "test_accuracy": test_acc
+                # "train_loss": train_loss,
+                # "train_accuracy": train_acc,
+                # "val_accuracy": val_acc,
+                # "test_accuracy": test_acc
             }, step=epoch)
 
         # Only using validation accuracy for model selection.

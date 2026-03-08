@@ -7,6 +7,7 @@ from ann.neural_layer import NeuralLayer
 from ann.activations import ReLU, Sigmoid, Tanh
 from ann.objective_functions import CrossEntropyLoss, MSELoss
 from ann.optimizers import SGD, Momentum, NAG, RMSProp
+import wandb
 
 
 
@@ -85,6 +86,19 @@ class NeuralNetwork:
         for layer in self.layers:
             A = layer.forward(A)
 
+        # for i, layer in enumerate(self.layers):
+
+        #     A = layer.forward(A)
+
+        #     dead_fraction = np.mean(np.all(A==0, axis=0))
+
+        #     # log activation distributions for hidden layers
+        #     if i < len(self.layers) - 1:
+
+        #         wandb.log({
+        #             f"dnf_layer{i+1}": dead_fraction
+        #         }, commit=False)
+
         return A
     
     # Helper for the backward funciton
@@ -140,6 +154,11 @@ class NeuralNetwork:
                 loss = self.loss_fn.forward(logits, yb)
 
                 self.backward(yb, logits)
+
+                # grad_norm = np.linalg.norm(self.layers[0].grad_W)
+
+                # if wandb.run is not None:
+                #     wandb.log({"grad_norm_layer1": grad_norm}, commit=False)
 
                 self.update_weights()
 
