@@ -14,9 +14,6 @@ from sklearn.model_selection import train_test_split
 
 
 def parse_arguments():
-    """
-    Parse command-line arguments.
-    """
 
     parser = argparse.ArgumentParser(description="Train a neural network")
 
@@ -86,7 +83,6 @@ def main():
         random_state=42
     )
 
-    # build model
     model = NeuralNetwork(args)
 
     best_acc = 0
@@ -112,7 +108,7 @@ def main():
                 "test_accuracy": test_acc
             }, step=epoch)
 
-            # Only using validation accuracy for model selection. Test accuracy is only for final evaluation after training is complete.
+        # Only using validation accuracy for model selection.
         if val_acc > best_acc:
             best_acc = val_acc
             best_weights = model.get_weights()

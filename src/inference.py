@@ -12,9 +12,6 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 
 def parse_arguments():
-    """
-    Parse command-line arguments for inference.
-    """
 
     parser = argparse.ArgumentParser(description="Run inference on test set")
 
@@ -43,17 +40,12 @@ def parse_arguments():
 
 
 def load_model(model_path):
-    """
-    Load trained model weights.
-    """
+
     data = np.load(model_path, allow_pickle=True).item()
     return data
 
 
 def evaluate_model(model, X_test, y_test):
-    """
-    Evaluate model on test data.
-    """
 
     logits = model.forward(X_test)
 

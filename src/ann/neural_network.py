@@ -77,7 +77,6 @@ class NeuralNetwork:
 
     def forward(self, X):
         """
-        Forward propagation through all layers.
         Returns logits
         """
 

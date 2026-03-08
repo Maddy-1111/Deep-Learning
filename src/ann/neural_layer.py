@@ -12,7 +12,6 @@ class NeuralLayer:
         self.out_dim = out_dim
         self.activation = activation
 
-        # weight initialization
         if weight_init == "xavier":
             limit = np.sqrt(6 / (in_dim + out_dim))
             self.W = np.random.uniform(-limit, limit, (in_dim, out_dim))

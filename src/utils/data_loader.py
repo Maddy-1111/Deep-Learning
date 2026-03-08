@@ -50,9 +50,6 @@ def load_dataset(dataset_name="mnist"):
 
 
 def create_batches(X, y, batch_size, shuffle=True):
-    """
-    Generator that yields mini-batches
-    """
 
     n = X.shape[0]
     indices = np.arange(n)
