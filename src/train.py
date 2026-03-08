@@ -34,7 +34,7 @@ def parse_arguments():
     
     parser.add_argument("--num_layers", type=int, default=None)
 
-    parser.add_argument("--hidden_size", type=str, default="128 128")
+    parser.add_argument("--hidden_size", type=str, nargs="+", default=[128, 128])
     
     parser.add_argument("--activation", type=str, default="relu",
                         choices=["relu","sigmoid","tanh"])
@@ -76,8 +76,7 @@ def main():
     args.weight_init = config.get("weight_init", args.weight_init)
 
     args.hidden_size = config.get("hidden_size", args.hidden_size)
-    if isinstance(args.hidden_size, str):
-        args.hidden_size = list(map(int, args.hidden_size.replace(",", " ").split()))
+    args.hidden_size = list(map(int, " ".join(str(x) for x in args.hidden_size).split()))
 
     X_train, y_train, X_test, y_test = load_dataset(args.dataset)
 
@@ -104,16 +103,16 @@ def main():
         val_acc   = model.evaluate(X_val, y_val)
         test_acc  = model.evaluate(X_test[idx_test], y_test[idx_test])
 
-        print(f"Epoch {epoch+1} test accuracy: {test_acc}")
+        print(f"Epoch {epoch+1} val accuracy: {val_acc}")
 
-    if wandb:
-        wandb.log({
-            "train_accuracy": train_acc,
-            "val_accuracy": val_acc,
-            "test_accuracy": test_acc
-        }, step=epoch)
+        if wandb:
+            wandb.log({
+                "train_accuracy": train_acc,
+                "val_accuracy": val_acc,
+                "test_accuracy": test_acc
+            }, step=epoch)
 
-        # Only using validation accuracy for model selection. Test accuracy is only for final evaluation after training is complete.
+            # Only using validation accuracy for model selection. Test accuracy is only for final evaluation after training is complete.
         if val_acc > best_acc:
             best_acc = val_acc
             best_weights = model.get_weights()
