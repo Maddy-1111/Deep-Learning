@@ -44,7 +44,7 @@ def parse_arguments():
 
     parser.add_argument("--weight_decay", type=float, default=0.0)
 
-    parser.add_argument("--wandb_project", type=str, default="da6401_assignment_1")
+    parser.add_argument("--wandb_project", type=str, default="da6401_assignment_1-src")
 
     parser.add_argument("--model_save_path", type=str, default="best_model.npy")
 
@@ -55,6 +55,8 @@ def main():
 
     args = parse_arguments()
 
+    use_wandb = True
+
     try:
         wandb.init(
             project=args.wandb_project,
@@ -62,9 +64,9 @@ def main():
             group=getattr(args, "group", None)
         )
     except:
-        wandb = None
+        use_wandb = False
 
-    config = wandb.config if wandb else vars(args)
+    config = wandb.config if use_wandb else vars(args)
 
     args.learning_rate = config.get("learning_rate", args.learning_rate)
     args.batch_size = config.get("batch_size", args.batch_size)
@@ -101,7 +103,7 @@ def main():
 
         print(f"Epoch {epoch+1} val accuracy: {val_acc}")
 
-        if wandb:
+        if use_wandb:
             wandb.log({
                 "train_accuracy": train_acc,
                 "val_accuracy": val_acc,
