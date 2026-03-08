@@ -10,11 +10,11 @@ from utils.data_loader import load_dataset
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--model_path", type=str, required="best_model.npy")
+    parser.add_argument("--model_path", type=str, default="best_model.npy")
     parser.add_argument("--dataset", type=str, default="mnist",
                         choices=["mnist", "fashion_mnist"])
 
-    parser.add_argument("--hidden_size", type=int, nargs="+", default=[128,128,128])
+    parser.add_argument("--hidden_size", type=int, nargs="+", default=[128,128])
     parser.add_argument("--activation", type=str, default="relu")
     parser.add_argument("--loss", type=str, default="cross_entropy")
 
