@@ -127,6 +127,17 @@ class NeuralNetwork:
             self.grad_W[i] = layer.grad_W
             self.grad_b[i] = layer.grad_b
 
+        # g = self.layers[0].grad_W
+
+        # if wandb.run is not None:
+        #     wandb.log({
+        #         "g_n1": np.linalg.norm(g[:,0]),
+        #         "g_n2": np.linalg.norm(g[:,1]),
+        #         "g_n3": np.linalg.norm(g[:,2]),
+        #         "g_n4": np.linalg.norm(g[:,3]),
+        #         "g_n5": np.linalg.norm(g[:,4]),
+        #     })
+
         return self.grad_W, self.grad_b
 
 

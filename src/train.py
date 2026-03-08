@@ -49,6 +49,7 @@ def parse_arguments():
     parser.add_argument("--model_save_path", type=str, default="best_model.npy")
 
     parser.add_argument("--group", type=str, default=None)
+    parser.add_argument("--name", type=str, default=None)
 
     return parser.parse_args()
 
@@ -64,7 +65,7 @@ def main():
             project=args.wandb_project,
             config=vars(args),
             group=getattr(args, "group", None),
-            name=f"{args.loss}")
+            name=getattr(args, "name", None))
     except:
         use_wandb = False
 
@@ -111,9 +112,9 @@ def main():
         if use_wandb:
             wandb.log({
                 # "train_loss": train_loss,
-                # "train_accuracy": train_acc,
-                # "val_accuracy": val_acc,
-                # "test_accuracy": test_acc
+                "train_accuracy": train_acc,
+                "val_accuracy": val_acc,
+                "test_accuracy": test_acc
             }, step=epoch)
 
         # Only using validation accuracy for model selection.
