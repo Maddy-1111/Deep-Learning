@@ -30,6 +30,7 @@ class NeuralNetwork:
         else:
             raise ValueError("Unsupported activation")
 
+        self.loss_name = cli_args.loss
         # choose loss
         if cli_args.loss == "cross_entropy":
             self.loss_fn = CrossEntropyLoss()
@@ -96,12 +97,26 @@ class NeuralNetwork:
         grad_W_list = []
         grad_b_list = []
 
-        # gradient wrt logits from loss
-        loss_grad = self.loss_fn.backward()
+        m = y_true.shape[0]
 
-        dA = loss_grad
+        # gradient of loss w.r.t logits
+        if self.loss_name == "cross_entropy":
 
-        # reverse through layers
+            # compute softmax
+            logits_shift = y_pred - np.max(y_pred, axis=1, keepdims=True)
+            exp_logits = np.exp(logits_shift)
+            probs = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+
+            dA = (probs - y_true) / m
+
+        elif self.loss_name == "mse":
+
+            dA = 2 * (y_pred - y_true) / m
+
+        else:
+            raise ValueError("Unsupported loss")
+
+        # backprop through layers
         for layer in reversed(self.layers):
 
             dA = layer.backward(dA)
@@ -117,7 +132,7 @@ class NeuralNetwork:
             self.grad_W[i] = gw
             self.grad_b[i] = gb
 
-        return self.grad_W, self.grad_b
+        return self.grad_W, self.grad_b  
 
 
     def update_weights(self):

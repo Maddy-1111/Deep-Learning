@@ -1,6 +1,6 @@
 program: train.py
 
-method: random
+method: grid
 
 metric:
   name: val_accuracy
@@ -15,16 +15,14 @@ parameters:
     values: [32, 64, 128]
 
   optimizer:
-    values: ["sgd", "momentum", "nag", "rmsprop"]
+    values: ["rmsprop"]
 
   activation:
-    values: ["relu", "tanh", "sigmoid"]
+    values: ["relu", "sigmoid"]
 
   hidden_size:
     values:
       - "128 128"
-      - "128 128 64"
-      - "256 128"
 
   weight_init:
-    values: ["random","xavier"]
+    values: ["xavier"]

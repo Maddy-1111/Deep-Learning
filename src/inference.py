@@ -18,13 +18,14 @@ def parse_arguments():
 
     parser = argparse.ArgumentParser(description="Run inference on test set")
 
-    parser.add_argument("--model_path", type=str, required=True,
-                        help="Relative path to saved model weights (.npy)")
+    parser.add_argument("--model_path", type=str, default="best_model.npy")
 
     parser.add_argument("--dataset", type=str, default="mnist",
                         choices=["mnist", "fashion_mnist"])
 
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=128)
+
+    parser.add_argument("--num_layers", type=int, default=None)
 
     parser.add_argument("--hidden_size", type=int, nargs="+", default=[128,128])
 

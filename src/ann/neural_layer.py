@@ -53,7 +53,7 @@ class NeuralLayer:
 
         b = self.X.shape[0]
 
-        ############### Can normalize the gradients by batch size here if needed (divide both rhs by b) ###############
+        #### Can normalize the gradients by batch size here if needed (divide both rhs by b) ####
 
         self.grad_W = self.X.T @ dZ
         self.grad_b = np.sum(dZ, axis=0, keepdims=True)

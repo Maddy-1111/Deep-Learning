@@ -31,6 +31,8 @@ def parse_arguments():
 
     parser.add_argument("--optimizer", type=str, default="sgd",
                         choices=["sgd", "momentum", "nag", "rmsprop"])
+    
+    parser.add_argument("--num_layers", type=int, default=None)
 
     parser.add_argument("--hidden_size", type=str, default="128 128")
     
@@ -56,10 +58,16 @@ def main():
 
     args = parse_arguments()
 
-    wandb.init(project=args.wandb_project, config=vars(args))
-    wandb.config.update(vars(args))
+    try:
+        wandb.init(
+            project=args.wandb_project,
+            config=vars(args),
+            group=getattr(args, "group", None)
+        )
+    except:
+        wandb = None
 
-    config = wandb.config
+    config = wandb.config if wandb else vars(args)
 
     args.learning_rate = config.get("learning_rate", args.learning_rate)
     args.batch_size = config.get("batch_size", args.batch_size)
@@ -96,13 +104,14 @@ def main():
         val_acc   = model.evaluate(X_val, y_val)
         test_acc  = model.evaluate(X_test[idx_test], y_test[idx_test])
 
+        print(f"Epoch {epoch+1} test accuracy: {test_acc}")
+
+    if wandb:
         wandb.log({
             "train_accuracy": train_acc,
             "val_accuracy": val_acc,
             "test_accuracy": test_acc
         }, step=epoch)
-
-        print(f"Epoch {epoch+1} test accuracy: {test_acc}")
 
         # Only using validation accuracy for model selection. Test accuracy is only for final evaluation after training is complete.
         if val_acc > best_acc:
