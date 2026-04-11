@@ -20,8 +20,9 @@ def train():
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--batch-size', type=int, default=32)
-    parser.add_argument('--dataset', type=str, default='./dataset',
-                        help='Path to dataset root containing images/ and annotations/')
+    parser.add_argument('--dataset', type=str, default='./dataset')
+    parser.add_argument('--pretrained-classifier', type=str, default=None)
+    parser.add_argument('--freeze-encoder', action=argparse.BooleanOptionalAction, default=False)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -32,12 +33,11 @@ def train():
         criterion = nn.CrossEntropyLoss()
         data_key = 'label'
     elif args.task == 'localization':
-        ### pretrained_path="classification.pth", freeze_encoder=True
-        model = VGG11Localizer().to(device)
+        model = VGG11Localizer(pretrained_path=args.pretrained_classifier, freeze_encoder=args.freeze_encoder).to(device)
         criterion = IoULoss() 
         data_key = 'bbox'
     elif args.task == 'segmentation':
-        model = VGG11UNet().to(device)
+        model = VGG11UNet(pretrained_path=args.pretrained_classifier, freeze_encoder=args.freeze_encoder).to(device)
         criterion = nn.CrossEntropyLoss()
         data_key = 'mask'
 
