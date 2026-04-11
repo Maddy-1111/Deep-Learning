@@ -24,9 +24,15 @@ def train():
     parser.add_argument('--fine-tune', type=str, default='full', choices=['strict', 'partial', 'full'])
     parser.add_argument('--batchnorm', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--dropout', type=float, default=0.5)
+    parser.add_argument('--num-workers', type=int, default=4)
+    parser.add_argument('--pin-memory', action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument('--prefetch-factor', type=int, default=2)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == 'cuda':
+        torch.backends.cudnn.benchmark = True
+    pin_memory = (device.type == 'cuda') if args.pin_memory is None else args.pin_memory
 
     # 1. Setup Task-Specific Logic
     if args.task == 'classification':
@@ -52,9 +58,13 @@ def train():
     # 3. Data Loaders
     train_ds = OxfordIIITPetDataset(root_dir=args.dataset, split='train', tasks=[args.task], transform=transform)
     test_ds = OxfordIIITPetDataset(root_dir=args.dataset, split='test', tasks=[args.task], transform=transform)
-    
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
-    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False)
+
+    loader_kwargs = {'batch_size': args.batch_size, 'num_workers': args.num_workers, 'pin_memory': pin_memory}
+    if args.num_workers > 0:
+        loader_kwargs['persistent_workers'] = True
+        loader_kwargs['prefetch_factor'] = args.prefetch_factor
+    train_loader = DataLoader(train_ds, shuffle=True, **loader_kwargs)
+    test_loader = DataLoader(test_ds, shuffle=False, **loader_kwargs)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
@@ -65,8 +75,8 @@ def train():
         running_loss = 0.0
         
         for batch in train_loader:
-            images = batch['image'].to(device)
-            targets = batch[data_key].to(device)
+            images = batch['image'].to(device, non_blocking=pin_memory)
+            targets = batch[data_key].to(device, non_blocking=pin_memory)
 
             # For localization, ensure targets are float
             if args.task == 'localization':

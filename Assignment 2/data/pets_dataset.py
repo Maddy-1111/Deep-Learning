@@ -52,6 +52,10 @@ class OxfordIIITPetDataset(Dataset):
         else:
             self.image_ids = all_ids
 
+        self.bbox_cache = None
+        if "localization" in self.tasks:
+            self.bbox_cache = {img_id: self._parse_xml(img_id) for img_id in self.image_ids}
+
     def __len__(self):
         return len(self.image_ids)
 
@@ -77,7 +81,6 @@ class OxfordIIITPetDataset(Dataset):
         
         # Always load image
         image = Image.open(os.path.join(self.images_dir, f"{img_id}.jpg")).convert("RGB")
-        w_orig, h_orig = image.size
         image = np.array(image)
 
         data = {"image": image}
@@ -94,7 +97,7 @@ class OxfordIIITPetDataset(Dataset):
 
         bboxes = []
         if "localization" in self.tasks:
-            bboxes = [self._parse_xml(img_id)]
+            bboxes = [self.bbox_cache[img_id]]
             transform_kwargs["bboxes"] = bboxes
             # Required by Albumentations when bbox_params.label_fields is set.
             transform_kwargs["class_labels"] = [0]
