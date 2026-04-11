@@ -13,19 +13,17 @@ class VGG11UNet(nn.Module):
         self.up4 = self._decoder_block(512 + 512, 512)
         self.up3 = self._decoder_block(512 + 256, 256)
         self.up2 = self._decoder_block(256 + 128, 128)
-        self.up1 = self._decoder_block(128 + 64, 64)
+        self.up1 = self._decoder_block(128 + 64, 64, upsample=False)
         
         self.up_conv = nn.ConvTranspose2d(512, 512, kernel_size=2, stride=2)
         self.final_conv = nn.Conv2d(64, num_classes, kernel_size=1)
         self.dropout = CustomDropout(p=dropout_p)
 
-    def _decoder_block(self, in_ch, out_ch):
-        return nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(out_ch, out_ch, kernel_size=2, stride=2)
-        )
+    def _decoder_block(self, in_ch, out_ch, upsample=True):
+        layers = [nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1), nn.BatchNorm2d(out_ch), nn.ReLU(inplace=True)]
+        if upsample:
+            layers.append(nn.ConvTranspose2d(out_ch, out_ch, kernel_size=2, stride=2))
+        return nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # 1. Encoder pass with skip connections
