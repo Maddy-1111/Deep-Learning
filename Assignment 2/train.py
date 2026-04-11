@@ -15,8 +15,7 @@ from losses import IoULoss
 
 def train():
     parser = argparse.ArgumentParser(description="Train VGG11 for different tasks")
-    parser.add_argument('--task', type=str, default='classification', 
-                        choices=['classification', 'localization', 'segmentation'])
+    parser.add_argument('--task', type=str, default='classification', choices=['classification', 'localization', 'segmentation'])
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--batch-size', type=int, default=32)
