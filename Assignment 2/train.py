@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import wandb
 
 from data.pets_dataset import OxfordIIITPetDataset
 from models.classification import VGG11Classifier
@@ -68,6 +69,9 @@ def train():
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
+    # WandB Initialization
+    wandb.login(key="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")
+    wandb.init(project="DA6401_Assignment_2", config=args)
 
     # 4. Training Loop
     for epoch in range(args.epochs):
@@ -97,7 +101,7 @@ def train():
         print(f"Epoch [{epoch+1}/{args.epochs}], Task: {args.task}, Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s")
 
         # Save Checkpoint
-        torch.save(model.state_dict(), f"checkpoints/{args.task}.pth")
+        torch.save(model.state_dict(), f"{args.task}.pth")
 
 if __name__ == "__main__":
     train()
