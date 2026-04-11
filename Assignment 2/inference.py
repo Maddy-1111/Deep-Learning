@@ -174,10 +174,11 @@ def evaluate_localization(model, loader, device, pin_memory):
             ious_all.append(ious.detach().cpu())
 
     ious_np = torch.cat(ious_all).numpy() if ious_all else np.array([], dtype=np.float32)
-    map_50, map_50_95 = _compute_map_from_ious(ious_np)
+    acc_iou_50 = float(np.mean(ious_np >= 0.50)) if ious_np.size > 0 else 0.0
+    acc_iou_75 = float(np.mean(ious_np >= 0.75)) if ious_np.size > 0 else 0.0
     return {
-        "mAP@50": map_50,
-        "mAP@50:95": map_50_95,
+        "acc@IoU>=0.5": acc_iou_50,
+        "acc@IoU>=0.75": acc_iou_75,
     }
 
 
@@ -200,7 +201,7 @@ def evaluate_segmentation(model, loader, device, pin_memory):
 
     dice_per_class = (2.0 * total_inter + 1e-8) / (total_pred + total_tgt + 1e-8)
     return {
-        "dice": float(dice_per_class.mean().item()),
+        "macro_dice": float(dice_per_class.mean().item()),
     }
 
 
@@ -238,14 +239,15 @@ def evaluate_multitask(model, loader, device, pin_memory):
     y_pred = torch.cat(cls_preds).numpy()
     y_true = torch.cat(cls_labels).numpy()
     ious_np = torch.cat(ious_all).numpy() if ious_all else np.array([], dtype=np.float32)
-    map_50, map_50_95 = _compute_map_from_ious(ious_np)
+    acc_iou_50 = float(np.mean(ious_np >= 0.50)) if ious_np.size > 0 else 0.0
+    acc_iou_75 = float(np.mean(ious_np >= 0.75)) if ious_np.size > 0 else 0.0
 
     dice_per_class = (2.0 * total_inter + 1e-8) / (total_pred + total_tgt + 1e-8)
     return {
         "classification_macro_f1": f1_score(y_true, y_pred, average="macro"),
-        "localization_mAP@50": map_50,
-        "localization_mAP@50:95": map_50_95,
-        "segmentation_dice": float(dice_per_class.mean().item()),
+        "localization_acc@IoU>=0.5": acc_iou_50,
+        "localization_acc@IoU>=0.75": acc_iou_75,
+        "segmentation_macro_dice": float(dice_per_class.mean().item()),
     }
 
 
