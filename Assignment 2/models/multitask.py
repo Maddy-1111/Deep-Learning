@@ -23,9 +23,9 @@ class MultiTaskPerceptionModel(nn.Module):
             unet_path: Path to trained unet weights.
         """
         gdown = __import__("gdown")
-        gdown.download(id="<classifier.pth drive id>", output=classifier_path, quiet=False)
-        gdown.download(id="<localizer.pth drive id>", output=localizer_path, quiet=False)
-        gdown.download(id="<unet.pth drive id>", output=unet_path, quiet=False)
+        gdown.download(id="1Vst8zBOohDgLg_vAMsoVQu0JA5o84e0P", output=classifier_path, quiet=False)
+        gdown.download(id="1Z0LUjCHvZZYYVUgG66H7Xn9Bs8aq4V1p", output=localizer_path, quiet=False)
+        gdown.download(id="1WoiNaWDCVcn2ab6VWcZ3u8k8zQnrActP", output=unet_path, quiet=False)
 
         classifier = VGG11Classifier(num_classes=num_breeds, in_channels=in_channels)
         localizer = VGG11Localizer(in_channels=in_channels)
