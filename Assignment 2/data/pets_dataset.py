@@ -81,6 +81,7 @@ class OxfordIIITPetDataset(Dataset):
         
         # Always load image
         image = Image.open(os.path.join(self.images_dir, f"{img_id}.jpg")).convert("RGB")
+        w_orig, h_orig = image.size
         image = np.array(image)
 
         data = {"image": image}
@@ -113,10 +114,11 @@ class OxfordIIITPetDataset(Dataset):
                 # Convert [xmin, ymin, xmax, ymax] -> [xc, yc, w, h]
                 xmin, ymin, xmax, ymax = transformed['bboxes'][0]
                 data["bbox"] = torch.tensor([
-                    ((xmin + xmax) / 2),
-                    ((ymin + ymax) / 2),
-                    (xmax - xmin),
-                    (ymax - ymin)
+                    ((xmin + xmax) / 2) * w_orig,
+                    ((ymin + ymax) / 2) * h_orig,
+                    (xmax - xmin) * w_orig,
+                    (ymax - ymin) * h_orig
                 ], dtype=torch.float32)
+                data["orig_size"] = torch.tensor([w_orig, h_orig], dtype=torch.float32)
 
         return data

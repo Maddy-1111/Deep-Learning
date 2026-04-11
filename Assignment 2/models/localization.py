@@ -20,7 +20,7 @@ class VGG11Localizer(nn.Module):
             nn.Sigmoid() # Squish to [0, 1] for relative coordinates
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, image_size: torch.Tensor = None) -> torch.Tensor:
         x = self.encoder(x)
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
@@ -28,5 +28,8 @@ class VGG11Localizer(nn.Module):
         # Get normalized coordinates [0, 1]
         coords = self.regression_head(x)
         
-        # Scale to image pixel space (224 x 224)
-        return coords * 224.0
+        if image_size is None:
+            return coords * 224
+
+        scale = torch.stack([image_size[:, 0], image_size[:, 1], image_size[:, 0], image_size[:, 1]], dim=1)
+        return coords * scale

@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import wandb
 
 from data.pets_dataset import OxfordIIITPetDataset
 from models.classification import VGG11Classifier
@@ -68,6 +69,10 @@ def train():
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
+    # WandB Initialization
+    wandb.login(key="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")
+    wandb.init(project="DA6401_Assignment_2", config=args)
+
     # 4. Training Loop
     for epoch in range(args.epochs):
         epoch_start = time.perf_counter()
@@ -81,9 +86,10 @@ def train():
             # For localization, ensure targets are float
             if args.task == 'localization':
                 targets = targets.float()
+                sizes = batch['orig_size'].to(device, non_blocking=pin_memory)
 
             optimizer.zero_grad()
-            outputs = model(images)
+            outputs = model(images, sizes) if args.task == 'localization' else model(images)
             
             loss = criterion(outputs, targets)
             loss.backward()
