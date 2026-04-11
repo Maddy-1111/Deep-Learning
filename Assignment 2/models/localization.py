@@ -4,9 +4,9 @@ from .vgg11 import VGG11Encoder
 from .layers import CustomDropout
 
 class VGG11Localizer(nn.Module):
-    def __init__(self, pretrained_path: str = None, freeze_encoder: bool = False, in_channels: int = 3, dropout_p: float = 0.5):
+    def __init__(self, pretrained_path: str = None, fine_tune: str = 'full', in_channels: int = 3, dropout_p: float = 0.5):
         super().__init__()
-        self.encoder = VGG11Encoder(in_channels=in_channels, pretrained_path=pretrained_path, freeze=freeze_encoder)
+        self.encoder = VGG11Encoder(in_channels=in_channels, pretrained_path=pretrained_path, fine_tune=fine_tune)
         self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
         
         self.regression_head = nn.Sequential(

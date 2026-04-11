@@ -22,22 +22,24 @@ def train():
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--dataset', type=str, default='./dataset')
     parser.add_argument('--pretrained-classifier', type=str, default=None)
-    parser.add_argument('--freeze-encoder', action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument('--fine-tune', type=str, default='full', choices=['strict', 'partial', 'full'])
+    parser.add_argument('--batchnorm', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--dropout', type=float, default=0.5)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 1. Setup Task-Specific Logic
     if args.task == 'classification':
-        model = VGG11Classifier(num_classes=37).to(device)
+        model = VGG11Classifier(num_classes=37, dropout_p=args.dropout, use_batchnorm=args.batchnorm, fine_tune=args.fine_tune).to(device)
         criterion = nn.CrossEntropyLoss()
         data_key = 'label'
     elif args.task == 'localization':
-        model = VGG11Localizer(pretrained_path=args.pretrained_classifier, freeze_encoder=args.freeze_encoder).to(device)
+        model = VGG11Localizer(pretrained_path=args.pretrained_classifier, fine_tune=args.fine_tune).to(device)
         criterion = IoULoss() 
         data_key = 'bbox'
     elif args.task == 'segmentation':
-        model = VGG11UNet(pretrained_path=args.pretrained_classifier, freeze_encoder=args.freeze_encoder).to(device)
+        model = VGG11UNet(pretrained_path=args.pretrained_classifier, fine_tune=args.fine_tune).to(device)
         criterion = nn.CrossEntropyLoss()
         data_key = 'mask'
 

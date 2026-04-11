@@ -3,8 +3,9 @@ import torch.nn as nn
 from typing import Dict, Tuple, Union
 
 class VGG11Encoder(nn.Module):
-    def __init__(self, in_channels: int = 3, pretrained_path: str = None, freeze: bool = False):
+    def __init__(self, in_channels: int = 3, pretrained_path: str = None, fine_tune: str = 'full', use_batchnorm: bool = True):
         super().__init__()
+        self.use_batchnorm = use_batchnorm
         
         # VGG11 Configuration: (channels, num_convs)
         self.block1 = self._make_block(in_channels, 64, 1)
@@ -18,9 +19,15 @@ class VGG11Encoder(nn.Module):
         if pretrained_path:
             self._load_weights(pretrained_path)
 
-        if freeze:
+        if fine_tune == 'strict':
             for param in self.parameters():
                 param.requires_grad = False
+        elif fine_tune == 'partial':
+            for block in [self.block1, self.block2, self.block3]:
+                for param in block.parameters():
+                    param.requires_grad = False
+        elif fine_tune == 'full':
+            pass  # All layers are trainable
 
     def _load_weights(self, path):
             # Load the state dict you saved in Task 1
@@ -35,7 +42,8 @@ class VGG11Encoder(nn.Module):
         layers = []
         for i in range(num_convs):
             layers.append(nn.Conv2d(in_ch if i == 0 else out_ch, out_ch, kernel_size=3, padding=1))
-            layers.append(nn.BatchNorm2d(out_ch))
+            if self.use_batchnorm:
+                layers.append(nn.BatchNorm2d(out_ch))
             layers.append(nn.ReLU(inplace=True))
         return nn.Sequential(*layers)
 
