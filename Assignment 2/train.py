@@ -1,4 +1,5 @@
 import argparse
+import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -58,12 +59,11 @@ def train():
 
     # 4. Training Loop
     for epoch in range(args.epochs):
-        print(f"Epoch {epoch+1} Started") ####################
+        epoch_start = time.perf_counter()
         model.train()
         running_loss = 0.0
         
         for batch in train_loader:
-            print(f"Fresh Batch Baking") ###################
             images = batch['image'].to(device)
             targets = batch[data_key].to(device)
 
@@ -80,7 +80,8 @@ def train():
             running_loss += loss.item()
 
         avg_loss = running_loss / len(train_loader)
-        print(f"Epoch [{epoch+1}/{args.epochs}], Task: {args.task}, Loss: {avg_loss:.4f}")
+        epoch_time = time.perf_counter() - epoch_start
+        print(f"Epoch [{epoch+1}/{args.epochs}], Task: {args.task}, Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s")
 
         # Save Checkpoint
         torch.save(model.state_dict(), f"{args.task}.pth")
