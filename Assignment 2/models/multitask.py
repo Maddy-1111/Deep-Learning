@@ -4,6 +4,10 @@
 import torch
 import torch.nn as nn
 
+from .classification import VGG11Classifier
+from .localization import VGG11Localizer
+from .segmentation import VGG11UNet
+
 class MultiTaskPerceptionModel(nn.Module):
     """Shared-backbone multi-task model."""
 
@@ -18,11 +22,35 @@ class MultiTaskPerceptionModel(nn.Module):
             localizer_path: Path to trained localizer weights.
             unet_path: Path to trained unet weights.
         """
-        import gdown
+        gdown = __import__("gdown")
         gdown.download(id="<classifier.pth drive id>", output=classifier_path, quiet=False)
         gdown.download(id="<localizer.pth drive id>", output=localizer_path, quiet=False)
         gdown.download(id="<unet.pth drive id>", output=unet_path, quiet=False)
-        pass
+
+        classifier = VGG11Classifier(num_classes=num_breeds, in_channels=in_channels)
+        localizer = VGG11Localizer(in_channels=in_channels)
+        unet = VGG11UNet(num_classes=seg_classes, in_channels=in_channels)
+
+        classifier.load_state_dict(torch.load(classifier_path, map_location="cpu"))
+        localizer.load_state_dict(torch.load(localizer_path, map_location="cpu"))
+        unet.load_state_dict(torch.load(unet_path, map_location="cpu"))
+
+        # Shared encoder and task-specific heads
+        self.encoder = classifier.encoder
+
+        self.cls_avgpool = classifier.avgpool
+        self.cls_head = classifier.classifier
+
+        self.loc_avgpool = localizer.avgpool
+        self.loc_head = localizer.regression_head
+
+        self.up4 = unet.up4
+        self.up3 = unet.up3
+        self.up2 = unet.up2
+        self.up1 = unet.up1
+        self.up_conv = unet.up_conv
+        self.final_conv = unet.final_conv
+        self.seg_dropout = unet.dropout
 
     def forward(self, x: torch.Tensor):
         """Forward pass for multi-task model.
@@ -34,5 +62,21 @@ class MultiTaskPerceptionModel(nn.Module):
             - 'localization': [B, 4] bounding box tensor.
             - 'segmentation': [B, seg_classes, H, W] segmentation logits tensor
         """
-        # TODO: Implement forward pass.
-        raise NotImplementedError("Implement MultiTaskPerceptionModel.forward")
+        bottleneck, skips = self.encoder(x, return_features=True)
+
+        cls_logits = self.cls_head(torch.flatten(self.cls_avgpool(bottleneck), 1))
+
+        # Localizer head predicts normalized coordinates; convert to 224x224 pixel space.
+        loc_boxes = self.loc_head(torch.flatten(self.loc_avgpool(bottleneck), 1)) * 224
+
+        d4 = self.up4(torch.cat([self.up_conv(bottleneck), skips["skip4"]], dim=1))
+        d3 = self.up3(torch.cat([d4, skips["skip3"]], dim=1))
+        d2 = self.up2(torch.cat([d3, skips["skip2"]], dim=1))
+        d1 = self.up1(torch.cat([d2, skips["skip1"]], dim=1))
+        seg_logits = self.final_conv(self.seg_dropout(d1))
+
+        return {
+            "classification": cls_logits,
+            "localization": loc_boxes,
+            "segmentation": seg_logits,
+        }
