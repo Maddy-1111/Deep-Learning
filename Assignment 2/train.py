@@ -22,6 +22,7 @@ def train():
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--dataset', type=str, default='./dataset')
     parser.add_argument('--pretrained-classifier', type=str, default=None)
+    parser.add_argument('--resume-checkpoint', type=str, default=None)
     parser.add_argument('--fine-tune', type=str, default='full', choices=['strict', 'partial', 'full'])
     parser.add_argument('--batchnorm', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--dropout', type=float, default=0.5)
@@ -41,13 +42,21 @@ def train():
         criterion = nn.CrossEntropyLoss()
         data_key = 'label'
     elif args.task == 'localization':
-        model = VGG11Localizer(pretrained_path=args.pretrained_classifier, fine_tune=args.fine_tune).to(device)
+        model = VGG11Localizer(pretrained_path=args.pretrained_classifier, fine_tune=args.fine_tune, dropout_p=args.dropout).to(device)
         criterion = IoULoss() 
         data_key = 'bbox'
     elif args.task == 'segmentation':
-        model = VGG11UNet(pretrained_path=args.pretrained_classifier, fine_tune=args.fine_tune).to(device)
+        model = VGG11UNet(pretrained_path=args.pretrained_classifier, fine_tune=args.fine_tune, dropout_p=args.dropout).to(device)
         criterion = nn.CrossEntropyLoss()
         data_key = 'mask'
+
+    # Optional resume from a task checkpoint.
+    if args.resume_checkpoint is not None:
+        checkpoint = torch.load(args.resume_checkpoint, map_location='cpu')
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            model.load_state_dict(checkpoint)
 
     # 2. Transforms
     transform = A.Compose([
