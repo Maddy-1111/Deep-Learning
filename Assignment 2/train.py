@@ -69,9 +69,6 @@ def train():
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    # WandB Initialization
-    wandb.login(key="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")
-    wandb.init(project="DA6401_Assignment_2", config=args)
 
     # 4. Training Loop
     for epoch in range(args.epochs):
