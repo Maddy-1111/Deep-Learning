@@ -1,66 +1,86 @@
+import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import albumentations as A
-from albumentations.pytorch import TO_TENSOR_V2
-import wandb
+from albumentations.pytorch import ToTensorV2
 
-from pets_dataset import OxfordIIITPetDataset
-from classification import VGG11Classifier
+from data.pets_dataset import OxfordIIITPetDataset
+from models.classification import VGG11Classifier
+from models.localization import VGG11Localizer
+from models.segmentation import VGG11UNet
+from losses import IoULoss
 
 def train():
-    # Initialize W&B
-    # wandb.init(project="da6401_assignment_2", name="task1_classification")
-    
+    parser = argparse.ArgumentParser(description="Train VGG11 for different tasks")
+    parser.add_argument('--task', type=str, default='classification', 
+                        choices=['classification', 'localization', 'segmentation'])
+    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--lr', type=float, default=1e-4)
+    args = parser.parse_args()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Define Transforms
+
+    # 1. Setup Task-Specific Logic
+    if args.task == 'classification':
+        model = VGG11Classifier(num_classes=37).to(device)
+        criterion = nn.CrossEntropyLoss()
+        data_key = 'label'
+    elif args.task == 'localization':
+        ### pretrained_path="best_classification_model.pth", freeze_encoder=True
+        model = VGG11Localizer().to(device)
+        criterion = IoULoss() 
+        data_key = 'bbox'
+    elif args.task == 'segmentation':
+        model = VGG11UNet().to(device)
+        criterion = nn.CrossEntropyLoss()
+        data_key = 'mask'
+
+    # 2. Transforms
     transform = A.Compose([
         A.Resize(224, 224),
         A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-        TO_TENSOR_V2(),
-    ])
+        ToTensorV2(),
+    ], bbox_params=A.BboxParams(format='albumentations', label_fields=['class_labels']) if args.task == 'localization' else None)
 
-    # Data Loaders
-    train_dataset = OxfordIIITPetDataset(root_dir='./data', split='trainval', transform=transform)
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
+    # 3. Data Loaders
+    train_ds = OxfordIIITPetDataset(root_dir='./dataset', split='train', tasks=[args.task], transform=transform)
+    test_ds = OxfordIIITPetDataset(root_dir='./dataset', split='test', tasks=[args.task], transform=transform)
+    
+    train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
+    test_loader = DataLoader(test_ds, batch_size=32, shuffle=False)
 
-    # Model, Loss, Optimizer
-    model = VGG11Classifier(num_classes=37, dropout_p=0.5).to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    # Training Loop
-    model.train()
-    for epoch in range(10):
+    # 4. Training Loop
+    for epoch in range(args.epochs):
+        print(f"Epoch {epoch+1} Started") ####################
+        model.train()
         running_loss = 0.0
-        correct = 0
-        total = 0
         
         for batch in train_loader:
+            print(f"Fresh Batch Baking") ###################
             images = batch['image'].to(device)
-            labels = batch['label'].to(device)
+            targets = batch[data_key].to(device)
+
+            # For localization, ensure targets are float
+            if args.task == 'localization':
+                targets = targets.float()
 
             optimizer.zero_grad()
             outputs = model(images)
-            loss = criterion(outputs, labels)
+            
+            loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
-
-            # Stats
             running_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
 
-        epoch_acc = 100. * correct / total
-        epoch_loss = running_loss / len(train_loader)
-        
-        print(f"Epoch {epoch+1}: Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.2f}%")
-        wandb.log({"train_loss": epoch_loss, "train_acc": epoch_acc})
+        avg_loss = running_loss / len(train_loader)
+        print(f"Epoch [{epoch+1}/{args.epochs}], Task: {args.task}, Loss: {avg_loss:.4f}")
 
-    wandb.finish()
+        # Save Checkpoint
+        torch.save(model.state_dict(), f"best_{args.task}_model.pth")
 
 if __name__ == "__main__":
     train()

@@ -6,69 +6,114 @@ from torch.utils.data import Dataset
 import xml.etree.ElementTree as ET
 
 class OxfordIIITPetDataset(Dataset):
-    def __init__(self, root_dir, split='trainval', transform=None):
+    def __init__(self, root_dir, split='train', tasks=["classification"], transform=None, split_ratio=0.8):
         self.root_dir = root_dir
         self.transform = transform
+        self.tasks = tasks
+
         self.images_dir = os.path.join(root_dir, 'images')
         self.masks_dir = os.path.join(root_dir, 'annotations', 'trimaps')
         self.xmls_dir = os.path.join(root_dir, 'annotations', 'xmls')
         
-        # Load the specific image IDs for the current split
-        split_file = os.path.join(root_dir, 'annotations', f'{split}.txt')
-        with open(split_file, 'r') as f:
-            self.image_entries = [line.split() for line in f.readlines()]
+        # 1. Always parse list.txt for the master Name -> ClassID mapping
+        self.class_map = {}
+        list_path = os.path.join(root_dir, 'annotations', 'list.txt')
+        with open(list_path, 'r') as f:
+            for line in f:
+                if line.startswith('#'): continue
+                parts = line.split()
+                self.class_map[parts[0]] = int(parts[1]) - 1
+
+        # 2. Select Source File based on Task
+        # Task 2 (Localization) requires XMLs, which are only guaranteed in trainval.txt
+        if "localization" in self.tasks:
+            source_file = os.path.join(root_dir, 'annotations', 'trainval.txt')
+        else:
+            source_file = list_path
+
+        # Load IDs from the selected source
+        all_ids = []
+        with open(source_file, 'r') as f:
+            for line in f:
+                if line.startswith('#'): continue
+                all_ids.append(line.split()[0])
+
+        # 3. Apply 80-20 Split
+        # Fixed seed ensures 'test' split remains unseen by 'train'
+        np.random.seed(42)
+        np.random.shuffle(all_ids)
+        
+        train_size = int(len(all_ids) * split_ratio)
+        
+        if split == 'train':
+            self.image_ids = all_ids[:train_size]
+        elif split == 'test':
+            self.image_ids = all_ids[train_size:]
+        else:
+            self.image_ids = all_ids
 
     def __len__(self):
-        return len(self.image_entries)
+        return len(self.image_ids)
 
-    def _parse_xml(self, xml_path):
-        """Extracts bounding box coordinates from XML annotations."""
+    def _parse_xml(self, img_id):
+        xml_path = os.path.join(self.xmls_dir, f"{img_id}.xml")
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        bndbox = root.find('object').find('bndbox')
-        
-        return [
-            float(bndbox.find('xmin').text),
-            float(bndbox.find('ymin').text),
-            float(bndbox.find('xmax').text),
-            float(bndbox.find('ymax').text)
-        ]
+
+        size = root.find("size")
+        width = float(size.find("width").text)
+        height = float(size.find("height").text)
+
+        bndbox = root.find("object").find("bndbox")
+        xmin = float(bndbox.find("xmin").text) / width
+        ymin = float(bndbox.find("ymin").text) / height
+        xmax = float(bndbox.find("xmax").text) / width
+        ymax = float(bndbox.find("ymax").text) / height
+
+        return [xmin, ymin, xmax, ymax]
 
     def __getitem__(self, idx):
-        img_id, class_id, _, _ = self.image_entries[idx]
+        img_id = self.image_ids[idx]
         
-        # Load image (RGB) and mask (Grayscale)
-        image = np.array(Image.open(os.path.join(self.images_dir, f"{img_id}.jpg")).convert("RGB"))
-        mask = np.array(Image.open(os.path.join(self.masks_dir, f"{img_id}.png")))
-        
-        # Clean mask: Oxford trimaps use 1, 2, 3. Convert to 0, 1, 2 for CrossEntropy
-        mask = mask - 1
-        
-        # Load raw bounding box coordinates
-        bbox_coords = self._parse_xml(os.path.join(self.xmls_dir, f"{img_id}.xml"))
-        
-        if self.transform:
-            # Albumentations expects bboxes as [xmin, ymin, xmax, ymax, label]
-            transformed = self.transform(image=image, mask=mask, bboxes=[bbox_coords + [int(class_id)]])
-            image = transformed['image']
-            mask = transformed['mask'].long()
-            
-            # Convert [xmin, ymin, xmax, ymax] to [Xcenter, Ycenter, width, height]
-            if len(transformed['bboxes']) > 0:
-                xmin, ymin, xmax, ymax = transformed['bboxes'][0][:4]
-                # Normalize by image dimensions (standard for regression tasks)
-                # Assumes transform has already resized/normalized the image
-                c_x = (xmin + xmax) / 2.0
-                c_y = (ymin + ymax) / 2.0
-                w = xmax - xmin
-                h = ymax - ymin
-                bbox = torch.tensor([c_x, c_y, w, h], dtype=torch.float32)
-            else:
-                bbox = torch.zeros(4)
+        # Always load image
+        image = Image.open(os.path.join(self.images_dir, f"{img_id}.jpg")).convert("RGB")
+        w_orig, h_orig = image.size
+        image = np.array(image)
 
-        return {
-            "image": image,
-            "label": torch.tensor(int(class_id) - 1, dtype=torch.long), # Breed (0-36)
-            "bbox": bbox,                                               # Localization
-            "mask": mask                                                # Segmentation
-        }
+        data = {"image": image}
+        transform_kwargs = {"image": image}
+
+        if "classification" in self.tasks:
+            data["label"] = torch.tensor(self.class_map[img_id], dtype=torch.long)
+
+        mask = None
+        if "segmentation" in self.tasks:
+            mask = np.array(Image.open(os.path.join(self.masks_dir, f"{img_id}.png")))
+            mask = mask - 1 # 1,2,3 -> 0,1,2
+            transform_kwargs["mask"] = mask
+
+        bboxes = []
+        if "localization" in self.tasks:
+            bboxes = [self._parse_xml(img_id)]
+            transform_kwargs["bboxes"] = bboxes
+            # Required by Albumentations when bbox_params.label_fields is set.
+            transform_kwargs["class_labels"] = [0]
+
+        if self.transform:
+            transformed = self.transform(**transform_kwargs)
+            data["image"] = transformed['image']
+            
+            if "segmentation" in self.tasks:
+                data["mask"] = transformed['mask'].long()
+            
+            if "localization" in self.tasks:
+                # Convert [xmin, ymin, xmax, ymax] -> [xc, yc, w, h]
+                xmin, ymin, xmax, ymax = transformed['bboxes'][0]
+                data["bbox"] = torch.tensor([
+                    ((xmin + xmax) / 2),
+                    ((ymin + ymax) / 2),
+                    (xmax - xmin),
+                    (ymax - ymin)
+                ], dtype=torch.float32)
+
+        return data

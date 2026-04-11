@@ -3,7 +3,7 @@ import torch.nn as nn
 from typing import Dict, Tuple, Union
 
 class VGG11Encoder(nn.Module):
-    def __init__(self, in_channels: int = 3):
+    def __init__(self, in_channels: int = 3, pretrained_path: str = None, freeze: bool = False):
         super().__init__()
         
         # VGG11 Configuration: (channels, num_convs)
@@ -14,6 +14,22 @@ class VGG11Encoder(nn.Module):
         self.block5 = self._make_block(512, 512, 2)
         
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        if pretrained_path:
+            self._load_weights(pretrained_path)
+
+        if freeze:
+            for param in self.parameters():
+                param.requires_grad = False
+
+    def _load_weights(self, path):
+            # Load the state dict you saved in Task 1
+            state_dict = torch.load(path)
+            
+            # Include encoder layers and remove classifier layers
+            encoder_dict = {k.replace('encoder.', ''): v for k, v in state_dict.items() if k.startswith('encoder.')}
+            
+            self.load_state_dict(encoder_dict)
 
     def _make_block(self, in_ch, out_ch, num_convs):
         layers = []
