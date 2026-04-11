@@ -19,7 +19,7 @@ def train():
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--batch-size', type=int, default=32)
-    parser.add_argument('--dataset-root', type=str, default='./dataset',
+    parser.add_argument('--dataset', type=str, default='./dataset',
                         help='Path to dataset root containing images/ and annotations/')
     args = parser.parse_args()
 
@@ -31,7 +31,7 @@ def train():
         criterion = nn.CrossEntropyLoss()
         data_key = 'label'
     elif args.task == 'localization':
-        ### pretrained_path="best_classification_model.pth", freeze_encoder=True
+        ### pretrained_path="classification.pth", freeze_encoder=True
         model = VGG11Localizer().to(device)
         criterion = IoULoss() 
         data_key = 'bbox'
@@ -48,8 +48,8 @@ def train():
     ], bbox_params=A.BboxParams(format='albumentations', label_fields=['class_labels']) if args.task == 'localization' else None)
 
     # 3. Data Loaders
-    train_ds = OxfordIIITPetDataset(root_dir=args.dataset_root, split='train', tasks=[args.task], transform=transform)
-    test_ds = OxfordIIITPetDataset(root_dir=args.dataset_root, split='test', tasks=[args.task], transform=transform)
+    train_ds = OxfordIIITPetDataset(root_dir=args.dataset, split='train', tasks=[args.task], transform=transform)
+    test_ds = OxfordIIITPetDataset(root_dir=args.dataset, split='test', tasks=[args.task], transform=transform)
     
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False)
@@ -83,7 +83,7 @@ def train():
         print(f"Epoch [{epoch+1}/{args.epochs}], Task: {args.task}, Loss: {avg_loss:.4f}")
 
         # Save Checkpoint
-        torch.save(model.state_dict(), f"best_{args.task}_model.pth")
+        torch.save(model.state_dict(), f"{args.task}.pth")
 
 if __name__ == "__main__":
     train()
