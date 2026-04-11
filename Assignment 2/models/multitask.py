@@ -25,7 +25,7 @@ class MultiTaskPerceptionModel(nn.Module):
         super().__init__()
 
         gdown = __import__("gdown")
-        gdown.download(id="1Vst8zBOohDgLg_vAMsoVQu0JA5o84e0P", output=classifier_path, quiet=False)
+        gdown.download(id="11BjA_4bay8B9V0XF9IuV7eH9HSI-ufP8", output=classifier_path, quiet=False)
         gdown.download(id="1Z0LUjCHvZZYYVUgG66H7Xn9Bs8aq4V1p", output=localizer_path, quiet=False)
         gdown.download(id="1WoiNaWDCVcn2ab6VWcZ3u8k8zQnrActP", output=unet_path, quiet=False)
 
