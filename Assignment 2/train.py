@@ -98,7 +98,7 @@ def train():
         print(f"Epoch [{epoch+1}/{args.epochs}], Task: {args.task}, Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s")
 
         # Save Checkpoint
-        torch.save(model.state_dict(), f"{args.task}.pth")
+        torch.save(model.state_dict(), f"checkpoints/{args.task}.pth")
 
 if __name__ == "__main__":
     train()
