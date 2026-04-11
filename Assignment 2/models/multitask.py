@@ -22,6 +22,8 @@ class MultiTaskPerceptionModel(nn.Module):
             localizer_path: Path to trained localizer weights.
             unet_path: Path to trained unet weights.
         """
+        super().__init__()
+
         gdown = __import__("gdown")
         gdown.download(id="1Vst8zBOohDgLg_vAMsoVQu0JA5o84e0P", output=classifier_path, quiet=False)
         gdown.download(id="1Z0LUjCHvZZYYVUgG66H7Xn9Bs8aq4V1p", output=localizer_path, quiet=False)
