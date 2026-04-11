@@ -14,7 +14,12 @@ class VGG11Encoder(nn.Module):
         self.block4 = self._make_block(256, 512, 2)
         self.block5 = self._make_block(512, 512, 2)
         
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        # VGG11 has 5 distinct max-pooling stages.
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool5 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         if pretrained_path:
             self._load_weights(pretrained_path)
@@ -56,23 +61,26 @@ class VGG11Encoder(nn.Module):
         # Process blocks and save features before pooling for U-Net skip connections
         x = self.block1(x)
         features["skip1"] = x
-        x = self.pool(x)
+        x = self.pool1(x)
         
         x = self.block2(x)
         features["skip2"] = x
-        x = self.pool(x)
+        x = self.pool2(x)
         
         x = self.block3(x)
         features["skip3"] = x
-        x = self.pool(x)
+        x = self.pool3(x)
         
         x = self.block4(x)
         features["skip4"] = x
-        x = self.pool(x)
+        x = self.pool4(x)
         
         x = self.block5(x)
-        # x here is the bottleneck feature map
+        bottleneck = x
+        x = self.pool5(x)
+        # x here is the encoder output after all 5 VGG11 pooling stages
         
         if return_features:
-            return x, features
+            # Keep U-Net decoder interface unchanged by returning pre-pool5 bottleneck.
+            return bottleneck, features
         return x
