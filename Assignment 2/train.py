@@ -18,6 +18,9 @@ def train():
                         choices=['classification', 'localization', 'segmentation'])
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--dataset-root', type=str, default='./dataset',
+                        help='Path to dataset root containing images/ and annotations/')
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -45,11 +48,11 @@ def train():
     ], bbox_params=A.BboxParams(format='albumentations', label_fields=['class_labels']) if args.task == 'localization' else None)
 
     # 3. Data Loaders
-    train_ds = OxfordIIITPetDataset(root_dir='./dataset', split='train', tasks=[args.task], transform=transform)
-    test_ds = OxfordIIITPetDataset(root_dir='./dataset', split='test', tasks=[args.task], transform=transform)
+    train_ds = OxfordIIITPetDataset(root_dir=args.dataset_root, split='train', tasks=[args.task], transform=transform)
+    test_ds = OxfordIIITPetDataset(root_dir=args.dataset_root, split='test', tasks=[args.task], transform=transform)
     
-    train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
-    test_loader = DataLoader(test_ds, batch_size=32, shuffle=False)
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
+    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
