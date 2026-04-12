@@ -2,24 +2,34 @@ import torch
 import torch.nn as nn
 from typing import Dict, Tuple, Union
 
+
 class VGG11Encoder(nn.Module):
-    def __init__(self, in_channels: int = 3, pretrained_path: str = None, fine_tune: str = 'full', use_batchnorm: bool = True):
+    def __init__(
+        self,
+        in_channels: int = 3,
+        pretrained_path: str = None,
+        fine_tune: str = 'full',
+        use_batchnorm: bool = True,
+    ):
+        # Build a VGG11-style encoder with optional pretrained loading and fine-tuning control.
         super().__init__()
         self.use_batchnorm = use_batchnorm
-        
-        # VGG11 Configuration: (channels, num_convs)
-        self.block1 = self._make_block(in_channels, 64, 1)
-        self.block2 = self._make_block(64, 128, 1)
-        self.block3 = self._make_block(128, 256, 2)
-        self.block4 = self._make_block(256, 512, 2)
-        self.block5 = self._make_block(512, 512, 2)
-        
-        # VGG11 has 5 distinct max-pooling stages.
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.pool5 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        block_spec = [
+            (in_channels, 64, 1),
+            (64, 128, 1),
+            (128, 256, 2),
+            (256, 512, 2),
+            (512, 512, 2),
+        ]
+
+        built_blocks = [self._make_block(in_ch, out_ch, num_convs) for in_ch, out_ch, num_convs in block_spec]
+        self.block1, self.block2, self.block3, self.block4, self.block5 = built_blocks
+        self.blocks = nn.ModuleList(built_blocks)
+
+        built_pools = [nn.MaxPool2d(kernel_size=2, stride=2) for _ in range(5)]
+        self.pool1, self.pool2, self.pool3, self.pool4, self.pool5 = built_pools
+        self.pools = nn.ModuleList(built_pools)
 
         if pretrained_path:
             self._load_weights(pretrained_path)
@@ -28,22 +38,24 @@ class VGG11Encoder(nn.Module):
             for param in self.parameters():
                 param.requires_grad = False
         elif fine_tune == 'partial':
-            for block in [self.block1, self.block2, self.block3]:
+            for block in self.blocks[:3]:
                 for param in block.parameters():
                     param.requires_grad = False
         elif fine_tune == 'full':
-            pass  # All layers are trainable
+            pass
 
     def _load_weights(self, path):
-            # Load the state dict you saved in Task 1
-            state_dict = torch.load(path)
-            
-            # Include encoder layers and remove classifier layers
-            encoder_dict = {k.replace('encoder.', ''): v for k, v in state_dict.items() if k.startswith('encoder.')}
-            
-            self.load_state_dict(encoder_dict)
+        # Load only encoder keys from a checkpoint and map them to this module.
+        state_dict = torch.load(path)
+        encoder_dict = {
+            key.replace('encoder.', ''): value
+            for key, value in state_dict.items()
+            if key.startswith('encoder.')
+        }
+        self.load_state_dict(encoder_dict)
 
     def _make_block(self, in_ch, out_ch, num_convs):
+        # Create one VGG stage containing repeated conv-(bn)-relu units.
         layers = []
         for i in range(num_convs):
             layers.append(nn.Conv2d(in_ch if i == 0 else out_ch, out_ch, kernel_size=3, padding=1))
@@ -55,32 +67,17 @@ class VGG11Encoder(nn.Module):
     def forward(
         self, x: torch.Tensor, return_features: bool = False
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
-        
+        # Return final encoder output, or pre-pool bottleneck plus skip features when requested.
         features = {}
-        
-        # Process blocks and save features before pooling for U-Net skip connections
-        x = self.block1(x)
-        features["skip1"] = x
-        x = self.pool1(x)
-        
-        x = self.block2(x)
-        features["skip2"] = x
-        x = self.pool2(x)
-        
-        x = self.block3(x)
-        features["skip3"] = x
-        x = self.pool3(x)
-        
-        x = self.block4(x)
-        features["skip4"] = x
-        x = self.pool4(x)
-        
-        x = self.block5(x)
-        bottleneck = x
-        x = self.pool5(x)
-        # x here is the encoder output after all 5 VGG11 pooling stages
-        
+
+        for stage_idx, (block, pool) in enumerate(zip(self.blocks, self.pools), start=1):
+            x = block(x)
+            if stage_idx < 5:
+                features[f"skip{stage_idx}"] = x
+            else:
+                bottleneck = x
+            x = pool(x)
+
         if return_features:
-            # Keep U-Net decoder interface unchanged by returning pre-pool5 bottleneck.
             return bottleneck, features
         return x

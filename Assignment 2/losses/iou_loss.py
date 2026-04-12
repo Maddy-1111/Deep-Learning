@@ -1,50 +1,58 @@
 import torch
 import torch.nn as nn
 
+
 class IoULoss(nn.Module):
-    def __init__(self, eps: float = 1e-6, reduction: str = "mean"):
+    def __init__(self, eps=1e-6, reduction="mean"):
         super().__init__()
-        self.eps = eps
-        
-        if reduction not in ["none", "mean", "sum"]:
-            raise ValueError(f"Invalid reduction: {reduction}")
-        self.reduction = reduction
+        self._eps = eps
 
-    def forward(self, pred_boxes: torch.Tensor, target_boxes: torch.Tensor) -> torch.Tensor:
-        # Convert from [xc, yc, w, h] to [x1, y1, x2, y2]
-        p_x1 = pred_boxes[:, 0] - pred_boxes[:, 2] / 2
-        p_y1 = pred_boxes[:, 1] - pred_boxes[:, 3] / 2
-        p_x2 = pred_boxes[:, 0] + pred_boxes[:, 2] / 2
-        p_y2 = pred_boxes[:, 1] + pred_boxes[:, 3] / 2
+        if reduction not in ("none", "mean", "sum"):
+            raise ValueError("bad reduction type")
+        self._mode = reduction
 
-        t_x1 = target_boxes[:, 0] - target_boxes[:, 2] / 2
-        t_y1 = target_boxes[:, 1] - target_boxes[:, 3] / 2
-        t_x2 = target_boxes[:, 0] + target_boxes[:, 2] / 2
-        t_y2 = target_boxes[:, 1] + target_boxes[:, 3] / 2
+    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        # unpack center format
+        ax, ay, aw, ah = a[:, 0], a[:, 1], a[:, 2], a[:, 3]
+        bx, by, bw, bh = b[:, 0], b[:, 1], b[:, 2], b[:, 3]
 
-        # Intersection coordinates
-        inter_x1 = torch.max(p_x1, t_x1)
-        inter_y1 = torch.max(p_y1, t_y1)
-        inter_x2 = torch.min(p_x2, t_x2)
-        inter_y2 = torch.min(p_y2, t_y2)
+        # convert to corners
+        a_x1 = ax - aw * 0.5
+        a_y1 = ay - ah * 0.5
+        a_x2 = ax + aw * 0.5
+        a_y2 = ay + ah * 0.5
 
-        # Intersection area (clamp to 0 to handle non-overlapping boxes)
-        inter_w = (inter_x2 - inter_x1).clamp(min=0)
-        inter_h = (inter_y2 - inter_y1).clamp(min=0)
-        intersection = inter_w * inter_h
+        b_x1 = bx - bw * 0.5
+        b_y1 = by - bh * 0.5
+        b_x2 = bx + bw * 0.5
+        b_y2 = by + bh * 0.5
 
-        # Union area: Area A + Area B - Intersection
-        area_p = pred_boxes[:, 2] * pred_boxes[:, 3]
-        area_t = target_boxes[:, 2] * target_boxes[:, 3]
-        union = area_p + area_t - intersection
+        # intersection box
+        xx1 = torch.maximum(a_x1, b_x1)
+        yy1 = torch.maximum(a_y1, b_y1)
+        xx2 = torch.minimum(a_x2, b_x2)
+        yy2 = torch.minimum(a_y2, b_y2)
 
-        # IoU and Loss
-        iou = intersection / (union + self.eps)
-        loss = 1 - iou
+        w = xx2 - xx1
+        h = yy2 - yy1
 
-        if self.reduction == "mean":
-            return loss.mean()
-        elif self.reduction == "sum":
-            return loss.sum()
-        else:
-            return loss
+        w = torch.clamp(w, min=0)
+        h = torch.clamp(h, min=0)
+
+        inter = w * h
+
+        # areas
+        area_a = aw * ah
+        area_b = bw * bh
+
+        # union
+        denom = area_a + area_b - inter
+
+        iou_val = inter / (denom + self._eps)
+        out = 1.0 - iou_val
+
+        if self._mode == "none":
+            return out
+        if self._mode == "sum":
+            return torch.sum(out)
+        return torch.mean(out)
