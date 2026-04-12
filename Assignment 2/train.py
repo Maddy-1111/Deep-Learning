@@ -51,6 +51,22 @@ def evaluate_segmentation(model, loader, criterion, device, pin_memory, num_clas
     macro_dice = float(dice_per_class.mean().item())
     return val_loss, pixel_accuracy, macro_dice
 
+
+def evaluate_localization_loss(model, loader, criterion, device, pin_memory):
+    model.eval()
+    running_test_loss = 0.0
+
+    with torch.no_grad():
+        for batch in loader:
+            images = batch['image'].to(device, non_blocking=pin_memory)
+            targets = batch['bbox'].to(device, non_blocking=pin_memory).float()
+            sizes = batch['orig_size'].to(device, non_blocking=pin_memory)
+
+            outputs = model(images, sizes)
+            running_test_loss += criterion(outputs, targets).item()
+
+    return running_test_loss / len(loader)
+
 def train():
     parser = argparse.ArgumentParser(description="Train VGG11 for different tasks")
     parser.add_argument('--task', type=str, default='classification', choices=['classification', 'localization', 'segmentation'])
@@ -154,12 +170,25 @@ def train():
 
         avg_loss = running_loss / len(train_loader)
         epoch_time = time.perf_counter() - epoch_start
-        epoch_metrics = {
-            'train/loss': avg_loss,
-            'epoch/time_sec': epoch_time,
-        }
+        epoch_metrics = {'train/loss': avg_loss, 'epoch/time_sec': epoch_time}
 
-        if args.task == 'segmentation':
+        if args.task == 'localization':
+            test_loss = evaluate_localization_loss(
+                model=model,
+                loader=test_loader,
+                criterion=criterion,
+                device=device,
+                pin_memory=pin_memory,
+            )
+            print(
+                f"Epoch [{epoch+1}/{args.epochs}], Task: {args.task}, "
+                f"Train Loss: {avg_loss:.4f}, Test Loss: {test_loss:.4f}, Time: {epoch_time:.2f}s"
+            )
+            epoch_metrics = {
+                'train/loss': avg_loss,
+                'test/loss': test_loss,
+            }
+        elif args.task == 'segmentation':
             val_loss, pixel_acc, macro_dice = evaluate_segmentation(
                 model=model,
                 loader=test_loader,
