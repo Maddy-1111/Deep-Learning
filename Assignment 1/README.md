@@ -4,7 +4,7 @@ Implementation of a multi-layer perceptron (MLP) to classify the MNIST dataset.
 
 **Links:**
 - [GitHub Repository](https://github.com/Maddy-1111/Deep-Learning)
-- [WandB Project](https://api.wandb.ai/links/ee23b040-indian-institute-of-technology-madras/jco8gz27)
+- [WandB Project](https://api.wandb.ai/links/ee23b040-indian-institute-of-technology-madras/s13hv4me)
 
 ## Project Structure
 
