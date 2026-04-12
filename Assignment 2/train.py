@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 import torch
 import torch.nn as nn
@@ -13,6 +14,42 @@ from models.classification import VGG11Classifier
 from models.localization import VGG11Localizer
 from models.segmentation import VGG11UNet
 from losses import IoULoss
+
+
+def evaluate_segmentation(model, loader, criterion, device, pin_memory, num_classes=3):
+    model.eval()
+    running_val_loss = 0.0
+    total_correct = 0
+    total_pixels = 0
+
+    total_inter = torch.zeros(num_classes, dtype=torch.float64, device=device)
+    total_pred = torch.zeros(num_classes, dtype=torch.float64, device=device)
+    total_tgt = torch.zeros(num_classes, dtype=torch.float64, device=device)
+
+    with torch.no_grad():
+        for batch in loader:
+            images = batch['image'].to(device, non_blocking=pin_memory)
+            masks = batch['mask'].to(device, non_blocking=pin_memory)
+
+            logits = model(images)
+            running_val_loss += criterion(logits, masks).item()
+
+            preds = torch.argmax(logits, dim=1)
+            total_correct += (preds == masks).sum().item()
+            total_pixels += masks.numel()
+
+            for c in range(num_classes):
+                pred_c = (preds == c)
+                tgt_c = (masks == c)
+                total_inter[c] += (pred_c & tgt_c).sum()
+                total_pred[c] += pred_c.sum()
+                total_tgt[c] += tgt_c.sum()
+
+    val_loss = running_val_loss / len(loader)
+    pixel_accuracy = total_correct / max(total_pixels, 1)
+    dice_per_class = (2.0 * total_inter + 1e-8) / (total_pred + total_tgt + 1e-8)
+    macro_dice = float(dice_per_class.mean().item())
+    return val_loss, pixel_accuracy, macro_dice
 
 def train():
     parser = argparse.ArgumentParser(description="Train VGG11 for different tasks")
@@ -29,6 +66,9 @@ def train():
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--pin-memory', action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument('--prefetch-factor', type=int, default=2)
+    parser.add_argument('--wandb-project', type=str, default='DA6401_Assignment_2')
+    parser.add_argument('--wandb-run-name', type=str, default=None)
+    parser.add_argument('--wandb', action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -78,6 +118,16 @@ def train():
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
+    run = None
+    if args.wandb:
+        run = wandb.init(
+            project=args.wandb_project,
+            name=args.wandb_run_name,
+            config=vars(args),
+        )
+
+    os.makedirs('checkpoints', exist_ok=True)
+
 
     # 4. Training Loop
     for epoch in range(args.epochs):
@@ -104,10 +154,40 @@ def train():
 
         avg_loss = running_loss / len(train_loader)
         epoch_time = time.perf_counter() - epoch_start
-        print(f"Epoch [{epoch+1}/{args.epochs}], Task: {args.task}, Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s")
+        epoch_metrics = {
+            'train/loss': avg_loss,
+            'epoch/time_sec': epoch_time,
+        }
+
+        if args.task == 'segmentation':
+            val_loss, pixel_acc, macro_dice = evaluate_segmentation(
+                model=model,
+                loader=test_loader,
+                criterion=criterion,
+                device=device,
+                pin_memory=pin_memory,
+                num_classes=3,
+            )
+            epoch_metrics['val/loss'] = val_loss
+            epoch_metrics['val/pixel_accuracy'] = pixel_acc
+            epoch_metrics['val/dice_macro'] = macro_dice
+
+            print(
+                f"Epoch [{epoch+1}/{args.epochs}], Task: {args.task}, "
+                f"Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, "
+                f"Val Pixel Acc: {pixel_acc:.4f}, Val Dice: {macro_dice:.4f}, Time: {epoch_time:.2f}s"
+            )
+        else:
+            print(f"Epoch [{epoch+1}/{args.epochs}], Task: {args.task}, Loss: {avg_loss:.4f}, Time: {epoch_time:.2f}s")
+
+        if run is not None:
+            wandb.log(epoch_metrics, step=epoch + 1)
 
         # Save Checkpoint
         torch.save(model.state_dict(), f"checkpoints/{args.task}.pth")
+
+    if run is not None:
+        wandb.finish()
 
 if __name__ == "__main__":
     train()
