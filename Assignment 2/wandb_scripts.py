@@ -1,276 +1,214 @@
 import argparse
-import io
+import re
 from pathlib import Path
 
 import albumentations as A
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import numpy as np
 import torch
-import torch.nn as nn
 import wandb
 from albumentations.pytorch import ToTensorV2
-from PIL import Image
-from torch.utils.data import DataLoader
+from PIL import Image, ImageDraw, ImageFont
 
 import models
-from data.pets_dataset import OxfordIIITPetDataset
 
 
-def normalize_feature_map(x: torch.Tensor) -> torch.Tensor:
-    x = x - x.min()
-    return x / (x.max() + 1e-6)
+IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
-def make_grid(channel_maps: torch.Tensor, title: str, max_maps: int = 16) -> plt.Figure:
-    num_maps = min(max_maps, channel_maps.shape[0])
-    cols = 4
-    rows = int(np.ceil(num_maps / cols))
-    fig, axes = plt.subplots(rows, cols, figsize=(12, 3 * rows))
-    axes = np.array(axes).reshape(-1)
+def load_breed_names(list_path: Path) -> list[str]:
+    breed_names = {}
+    with open(list_path, "r", encoding="utf-8") as file_handle:
+        for line in file_handle:
+            if line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            breed_name = re.sub(r"[_-]?\d+$", "", parts[0]).strip()
+            breed_names[int(parts[1]) - 1] = breed_name or parts[0]
 
-    for idx in range(rows * cols):
-        ax = axes[idx]
-        ax.axis("off")
-        if idx < num_maps:
-            ax.imshow(channel_maps[idx].cpu().numpy(), cmap="viridis")
-            ax.set_title(f"ch {idx}", fontsize=9)
+    if not breed_names:
+        raise ValueError(f"Could not read breed labels from {list_path}")
 
-    fig.suptitle(title, fontsize=14)
-    fig.tight_layout()
-    return fig
-
-
-def calculate_iou(pred_box: np.ndarray, target_box: np.ndarray) -> float:
-    """Calculate IoU between two boxes in [xc, yc, w, h] format.
-    
-    Args:
-        pred_box: Predicted box [xc, yc, w, h]
-        target_box: Ground truth box [xc, yc, w, h]
-    
-    Returns:
-        IoU score between 0 and 1
-    """
-    eps = 1e-6
-    
-    # Convert from [xc, yc, w, h] to [x1, y1, x2, y2]
-    def to_corners(box):
-        xc, yc, w, h = box
-        return [xc - w/2, yc - h/2, xc + w/2, yc + h/2]
-    
-    p_box = to_corners(pred_box)
-    t_box = to_corners(target_box)
-    
-    # Intersection
-    inter_x1 = max(p_box[0], t_box[0])
-    inter_y1 = max(p_box[1], t_box[1])
-    inter_x2 = min(p_box[2], t_box[2])
-    inter_y2 = min(p_box[3], t_box[3])
-    
-    inter_w = max(0, inter_x2 - inter_x1)
-    inter_h = max(0, inter_y2 - inter_y1)
-    intersection = inter_w * inter_h
-    
-    # Union
-    pred_area = pred_box[2] * pred_box[3]
-    target_area = target_box[2] * target_box[3]
-    union = pred_area + target_area - intersection
-    
-    iou = intersection / (union + eps)
-    return float(iou)
+    return [breed_names[index] for index in sorted(breed_names)]
 
 
-def draw_boxes_on_image(image_np: np.ndarray, pred_box: np.ndarray, target_box: np.ndarray) -> plt.Figure:
-    """Draw prediction and ground truth boxes on image.
-    
-    Args:
-        image_np: Image array (H, W, 3)
-        pred_box: Predicted box [xc, yc, w, h]
-        target_box: Ground truth box [xc, yc, w, h]
-    
-    Returns:
-        Figure with boxes drawn
-    """
-    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
-    ax.imshow(image_np)
-    ax.axis("off")
-    
-    def draw_box(ax, box, color, label):
-        xc, yc, w, h = box
-        x1 = xc - w/2
-        y1 = yc - h/2
-        rect = patches.Rectangle((x1, y1), w, h, linewidth=2, edgecolor=color, facecolor="none", label=label)
-        ax.add_patch(rect)
-    
-    # Draw ground truth (green) and prediction (red)
-    draw_box(ax, target_box, "green", "Ground Truth")
-    draw_box(ax, pred_box, "red", "Prediction")
-    
-    ax.legend(loc="upper right", fontsize=10)
-    fig.tight_layout()
-    return fig
+def trimap_to_rgb(mask: np.ndarray) -> np.ndarray:
+    palette = np.array(
+        [
+            [255, 140, 0],
+            [30, 144, 255],
+            [255, 255, 255],
+        ],
+        dtype=np.uint8,
+    )
+    mask = np.clip(mask.astype(np.int64), 0, 2)
+    return palette[mask]
 
 
-def fig_to_image(fig: plt.Figure) -> Image.Image:
-    """Convert matplotlib figure to PIL Image."""
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
-    buf.seek(0)
-    img = Image.open(buf)
-    img.load()
-    plt.close(fig)
-    return img
+def build_transform() -> A.Compose:
+    return A.Compose(
+        [
+            A.Resize(224, 224),
+            A.Normalize(mean=tuple(IMAGENET_MEAN.tolist()), std=tuple(IMAGENET_STD.tolist())),
+            ToTensorV2(),
+        ]
+    )
 
 
-def visualize_bbox_predictions(
-    image: Image.Image,
-    pred_box: np.ndarray,
-    target_box: np.ndarray,
-    iou: float
-) -> np.ndarray:
-    """Create visualization with bounding boxes overlaid on image.
-    
-    Returns:
-        Image array suitable for wandb.Image()
-    """
-    image_np = np.array(image)
-    
-    fig = draw_boxes_on_image(image_np, pred_box, target_box)
-    img_with_boxes = fig_to_image(fig)
-    
-    return np.array(img_with_boxes)
+def load_state_dict(checkpoint_path: str) -> dict:
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    if isinstance(checkpoint, dict):
+        for key in ("model_state_dict", "state_dict"):
+            if key in checkpoint:
+                return checkpoint[key]
+    return checkpoint
+
+
+def build_model(task: str, checkpoint_path: str, device: torch.device):
+    if task == "classification":
+        model = models.VGG11Classifier(num_classes=37)
+    elif task == "localization":
+        model = models.VGG11Localizer()
+    elif task == "segmentation":
+        model = models.VGG11UNet(num_classes=3)
+    else:
+        raise ValueError(f"Unsupported task: {task}")
+
+    model.load_state_dict(load_state_dict(checkpoint_path))
+    model.to(device)
+    model.eval()
+    return model
+
+
+def list_image_files(image_dir: Path) -> list[Path]:
+    if not image_dir.exists():
+        raise FileNotFoundError(f"Image directory not found: {image_dir}")
+
+    image_paths = [path for path in sorted(image_dir.iterdir()) if path.suffix.lower() in IMAGE_EXTENSIONS]
+    if not image_paths:
+        raise ValueError(f"No supported images found in {image_dir}")
+    return image_paths
+
+
+def draw_bbox_overlay(image_np: np.ndarray, bbox_xywh: np.ndarray, label_text: str) -> np.ndarray:
+    image = Image.fromarray(image_np)
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+
+    x_center, y_center, width, height = [float(value) for value in bbox_xywh]
+    x1 = max(0.0, x_center - width / 2.0)
+    y1 = max(0.0, y_center - height / 2.0)
+    x2 = min(float(image.width - 1), x_center + width / 2.0)
+    y2 = min(float(image.height - 1), y_center + height / 2.0)
+
+    draw.rectangle([x1, y1, x2, y2], outline=(255, 69, 0), width=4)
+    if label_text:
+        text_bbox = draw.textbbox((x1, y1), label_text, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        text_y1 = max(0.0, y1 - text_height - 6.0)
+        draw.rectangle([x1, text_y1, x1 + text_width + 8.0, text_y1 + text_height + 6.0], fill=(255, 69, 0))
+        draw.text((x1 + 4.0, text_y1 + 2.0), label_text, fill=(255, 255, 255), font=font)
+
+    return np.asarray(image)
+
+
+def resize_rgb_image(image_np: np.ndarray, size_xy: tuple[int, int]) -> np.ndarray:
+    return np.asarray(Image.fromarray(image_np).resize(size_xy, Image.NEAREST))
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Log bounding box predictions with W&B table")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/localization.pth")
-    parser.add_argument("--classifier-checkpoint", type=str, default="checkpoints/classification.pth")
-    parser.add_argument("--dataset", type=str, default="dataset")
-    parser.add_argument("--num-samples", type=int, default=10)
+    parser = argparse.ArgumentParser(description="Log predictions for images in a folder with W&B")
+    parser.add_argument("--image-dir", type=str, default="google-images")
+    parser.add_argument("--max-images", type=int, default=5)
+    parser.add_argument("--classification-checkpoint", type=str, default="checkpoints/classification.pth")
+    parser.add_argument("--localization-checkpoint", type=str, default="checkpoints/localization.pth")
+    parser.add_argument("--segmentation-checkpoint", type=str, default="checkpoints/segmentation.pth")
+    parser.add_argument("--labels-file", type=str, default="dataset/annotations/list.txt")
     parser.add_argument("--project", type=str, default="DA6401_Assignment_2")
-    parser.add_argument("--run-name", type=str, default="bbox_predictions")
+    parser.add_argument("--run-name", type=str, default="google_images_multitask_predictions")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    transform = build_transform()
+    breed_names = load_breed_names(Path(args.labels_file))
 
-    wandb.init(project=args.project, name=args.run_name)
+    run = wandb.init(project=args.project, name=args.run_name)
 
-    # Load localization model
-    model = models.VGG11Localizer().to(device)
-    checkpoint = torch.load(args.checkpoint, map_location="cpu")
+    classification_model = build_model("classification", args.classification_checkpoint, device)
+    localization_model = build_model("localization", args.localization_checkpoint, device)
+    segmentation_model = build_model("segmentation", args.segmentation_checkpoint, device)
 
-    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-        state_dict = checkpoint["model_state_dict"]
-    elif isinstance(checkpoint, dict) and "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
-    else:
-        state_dict = checkpoint
+    image_paths = list_image_files(Path(args.image_dir))
+    if args.max_images is not None:
+        image_paths = image_paths[: max(0, args.max_images)]
 
-    model.load_state_dict(state_dict)
-    model.eval()
+    if not image_paths:
+        raise ValueError("No images selected for logging.")
 
-    # Load classifier model for confidence scores
-    classifier = models.VGG11Classifier(num_classes=37).to(device)
-    classifier_checkpoint = torch.load(args.classifier_checkpoint, map_location="cpu")
-
-    if isinstance(classifier_checkpoint, dict) and "model_state_dict" in classifier_checkpoint:
-        classifier_state_dict = classifier_checkpoint["model_state_dict"]
-    elif isinstance(classifier_checkpoint, dict) and "state_dict" in classifier_checkpoint:
-        classifier_state_dict = classifier_checkpoint["state_dict"]
-    else:
-        classifier_state_dict = classifier_checkpoint
-
-    classifier.load_state_dict(classifier_state_dict)
-    classifier.eval()
-
-    # Load test dataset
-    transform = A.Compose(
-        [
-            A.Resize(224, 224),
-            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ToTensorV2(),
-        ],
-        bbox_params=A.BboxParams(format="albumentations", label_fields=["class_labels"]),
-    )
-
-    test_ds = OxfordIIITPetDataset(
-        root_dir=args.dataset,
-        split="test",
-        tasks=["localization"],
-        transform=transform
-    )
-
-    test_loader = DataLoader(test_ds, batch_size=1, shuffle=False)
-
-    # Create W&B table
     table = wandb.Table(columns=[
-        "Image",
-        "Image ID",
-        "Ground Truth Box\n(xc, yc, w, h)",
-        "Predicted Box\n(xc, yc, w, h)",
-        "Confidence Score",
-        "Intersection over Union (IoU)"
+        "Image Name",
+        "BBox Overlay",
+        "Classification",
+        "Trimap",
     ])
 
-    # Process test samples
     num_processed = 0
     with torch.no_grad():
-        for batch_idx, batch in enumerate(test_loader):
-            if num_processed >= args.num_samples:
-                break
+        for image_path in image_paths:
+            original_image = Image.open(image_path).convert("RGB")
+            original_np = np.asarray(original_image)
+            orig_size = torch.tensor([[original_image.width, original_image.height]], dtype=torch.float32, device=device)
 
-            images = batch["image"].to(device)
-            target_boxes = batch["bbox"].to(device)  # [1, 4]
-            orig_sizes = batch["orig_size"].to(device)  # [1, 2]
+            transformed = transform(image=original_np)
+            image_tensor = transformed["image"].unsqueeze(0).to(device)
 
-            # Get localization prediction
-            pred_coords_normalized = model(images, orig_sizes)  # [1, 4] in absolute coords
+            cls_logits = classification_model(image_tensor)
+            cls_probs = torch.softmax(cls_logits, dim=1)
+            cls_index = int(torch.argmax(cls_probs, dim=1).item())
+            cls_confidence = float(cls_probs[0, cls_index].item())
+            cls_name = breed_names[cls_index] if 0 <= cls_index < len(breed_names) else f"class_{cls_index}"
+            cls_text = f"{cls_name} ({cls_confidence:.2%})"
 
-            # Get classifier logits for confidence score
-            classifier_logits = classifier(images)  # [1, 37]
-            # Use softmax to get probabilities and take the max as confidence
-            confidences = torch.softmax(classifier_logits, dim=1)
-            confidence = confidences[0].max().cpu().item()
+            bbox_xywh = localization_model(image_tensor, orig_size)[0].detach().cpu().numpy()
+            overlay_np = draw_bbox_overlay(original_np, bbox_xywh, cls_text)
 
-            # Since model returns absolute coordinates when image_size is provided,
-            # we need to normalize for comparison
-            orig_w, orig_h = orig_sizes[0].cpu().numpy()
-            pred_box_np = pred_coords_normalized[0].cpu().numpy()
-            target_box_np = target_boxes[0].cpu().numpy()
+            seg_logits = segmentation_model(image_tensor)
+            seg_mask = torch.argmax(seg_logits, dim=1)[0].detach().cpu().numpy()
+            seg_trimap = trimap_to_rgb(seg_mask)
+            seg_trimap = resize_rgb_image(seg_trimap, (original_image.width, original_image.height))
 
-            # Normalize predictions to [xc, yc, w, h] format with original image dimensions
-            # The model output is already in this format when image_size is provided
-            iou = calculate_iou(pred_box_np, target_box_np)
-
-            # Load original image for visualization
-            img_id = test_ds.image_ids[batch_idx]
-            image_path = Path(args.dataset) / "images" / f"{img_id}.jpg"
-            image_orig = Image.open(image_path).convert("RGB")
-
-            # Create visualization
-            vis_image = visualize_bbox_predictions(image_orig, pred_box_np, target_box_np, iou)
-
-            # Format box strings
-            gt_box_str = f"({target_box_np[0]:.1f}, {target_box_np[1]:.1f}, {target_box_np[2]:.1f}, {target_box_np[3]:.1f})"
-            pred_box_str = f"({pred_box_np[0]:.1f}, {pred_box_np[1]:.1f}, {pred_box_np[2]:.1f}, {pred_box_np[3]:.1f})"
-
-            # Add to table
             table.add_data(
-                wandb.Image(vis_image),
-                img_id,
-                gt_box_str,
-                pred_box_str,
-                f"{confidence:.4f}",
-                f"{iou:.4f}"
+                image_path.name,
+                wandb.Image(overlay_np),
+                cls_text,
+                wandb.Image(seg_trimap),
             )
 
+            wandb.log(
+                {
+                    f"samples/{image_path.stem}_classification": cls_text,
+                    f"samples/{image_path.stem}_trimap": wandb.Image(seg_trimap),
+                },
+                step=num_processed,
+            )
             num_processed += 1
 
-    # Log table to W&B
-    wandb.log({"bbox_predictions_table": table})
+    wandb.log({"google_images_predictions_table": table})
+
+    if run is not None:
+        run.summary["images_processed"] = num_processed
+        run.summary["image_dir"] = str(Path(args.image_dir))
+        run.summary["classification_checkpoint"] = args.classification_checkpoint
+        run.summary["localization_checkpoint"] = args.localization_checkpoint
+        run.summary["segmentation_checkpoint"] = args.segmentation_checkpoint
+
     wandb.finish()
 
-    print(f"Logged {num_processed} test samples with bounding box predictions to W&B")
+    print(f"Logged {num_processed} images from {args.image_dir} to W&B.")
 
 
 if __name__ == "__main__":
