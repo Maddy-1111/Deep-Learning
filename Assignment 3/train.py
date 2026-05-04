@@ -372,7 +372,7 @@ ABLATIONS: dict[str, dict] = {
 }
 
 
-def run_all_ablations(num_epochs: int = 20, project: str = "da6401-a3") -> None:
+def run_all_ablations(num_epochs: int = 20, project: str = "DA6401_Assignment_3") -> None:
     """Train every ablation in ABLATIONS sequentially, each as its own W&B run."""
     for name, overrides in ABLATIONS.items():
         cfg = {"num_epochs": num_epochs, **overrides}
