@@ -266,7 +266,7 @@ class Transformer(nn.Module):
     # === HOSTED WEIGHTS ============================================
     # Upload your best checkpoint.pt to Google Drive and put the file ID here.
     # Used only when the model is instantiated with no args (autograder path).
-    WEIGHTS_GDRIVE_ID: str = "REPLACE_WITH_YOUR_GDRIVE_FILE_ID"
+    WEIGHTS_GDRIVE_ID: str = "1-DOEYshb5HzrumKblvdQqwQkahbv7DYl"
     WEIGHTS_LOCAL_PATH: str = "checkpoint.pt"
     # ===============================================================
 
@@ -342,8 +342,15 @@ class Transformer(nn.Module):
     @staticmethod
     def _load_spacy_de():
         import spacy
-        return spacy.load("de_core_news_sm",
-                          disable=["parser", "tagger", "ner", "lemmatizer"])
+        try:
+            return spacy.load("de_core_news_sm",
+                              disable=["parser", "tagger", "ner", "lemmatizer"])
+        except OSError:
+            # Autograder env doesn't ship the model — pull it down once.
+            from spacy.cli import download
+            download("de_core_news_sm")
+            return spacy.load("de_core_news_sm",
+                              disable=["parser", "tagger", "ner", "lemmatizer"])
 
     def encode(self, src: torch.Tensor, src_mask: torch.Tensor) -> torch.Tensor:
         x = self.src_embed(src) * math.sqrt(self.d_model)

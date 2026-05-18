@@ -87,7 +87,11 @@ def run_epoch(
     if not hasattr(run_epoch, "global_step"):
         run_epoch.global_step = 0
     model.train(is_train)
-    total_loss, n_batches = 0.0, 0
+    total_loss = 0.0
+    total_correct = 0     # § 2.1: token accuracy
+    total_conf = 0.0      # § 2.5: prediction confidence
+    total_tokens = 0
+    n_batches = 0
 
     pbar = tqdm(data_iter, desc=f"epoch {epoch_num} {'train' if is_train else 'eval'}",
                 mininterval=60, miniters=200, leave=False, ncols=80)
@@ -122,16 +126,33 @@ def run_epoch(
                     scheduler.step()
                 run_epoch.global_step += 1
 
-        loss_val = loss.item()                         # single GPU→CPU sync per batch
-        total_loss += loss_val
+        # accuracy + confidence — one extra sync per batch (token counts/correct/conf).
+        with torch.no_grad():
+            mask = (tgt_out != pad_idx)
+            preds = logits.argmax(-1)
+            correct = ((preds == tgt_out) & mask).sum().item()
+            probs = F.softmax(logits, dim=-1)
+            gold_prob = probs.gather(-1, tgt_out.unsqueeze(-1)).squeeze(-1)
+            conf_sum = gold_prob[mask].sum().item()
+            n_tok = mask.sum().item()
+
+        loss_val = loss.item()
+        total_loss    += loss_val
+        total_correct += correct
+        total_conf    += conf_sum
+        total_tokens  += n_tok
         n_batches += 1
         pbar.set_postfix(loss=f"{loss_val:.4f}")
 
     avg_loss = total_loss / max(n_batches, 1)
-    # ONE wandb call per epoch instead of per-batch (the big speedup).
+    avg_acc  = total_correct / max(total_tokens, 1)
+    avg_conf = total_conf    / max(total_tokens, 1)
+    prefix = "train" if is_train else "val"
     if log_fn is not None:
         log_fn({
-            f"{'train' if is_train else 'val'}/epoch_loss": avg_loss,
+            f"{prefix}/epoch_loss":  avg_loss,
+            f"{prefix}/accuracy":    avg_acc,
+            f"{prefix}/confidence":  avg_conf,
             "train/lr": optimizer.param_groups[0]["lr"] if optimizer is not None else 0,
             "epoch": epoch_num,
         })
@@ -402,6 +423,58 @@ def run_all_ablations(num_epochs: int = 20, project: str = "DA6401_Assignment_3"
 def get_encoder_attention(model: Transformer, layer_idx: int = -1) -> torch.Tensor:
     """Return attention weights [B, num_heads, S, S] from one encoder self-attn layer."""
     return model.encoder.layers[layer_idx].self_attn.last_attn_weights
+
+
+def log_attention_heatmaps(
+    model: Transformer,
+    german_sentence: str,
+    src_vocab,
+    layer_idx: int = -1,
+    wandb_log: bool = True,
+    run_name: str = "baseline",
+) -> None:
+    """§2.3 — render per-head attention heatmaps for the last encoder layer.
+
+    Tokenises the input, runs one encoder forward pass, then plots one heatmap
+    per head and (optionally) logs them to W&B as `attention/head_<h>`.
+    """
+    import matplotlib.pyplot as plt
+    from dataset import _spacy, SOS_IDX, EOS_IDX
+
+    device = next(model.parameters()).device
+    model.eval()
+
+    # tokenise → ids → encode
+    de = _spacy("de_core_news_sm")
+    toks = ["<sos>"] + [t.text.lower() for t in de.tokenizer(german_sentence)] + ["<eos>"]
+    ids = [SOS_IDX] + [src_vocab.stoi.get(t, 0) for t in toks[1:-1]] + [EOS_IDX]
+    src = torch.tensor([ids], dtype=torch.long, device=device)
+    src_mask = make_src_mask(src, PAD_IDX)
+    with torch.no_grad():
+        model.encode(src, src_mask)
+    attn = get_encoder_attention(model, layer_idx)[0]    # [H, S, S]
+
+    H, S, _ = attn.shape
+    fig, axes = plt.subplots(2, (H + 1) // 2, figsize=(3 * ((H + 1) // 2), 6))
+    for h, ax in enumerate(axes.flat):
+        if h >= H:
+            ax.axis("off"); continue
+        ax.imshow(attn[h].cpu(), cmap="viridis")
+        ax.set_title(f"head {h}")
+        ax.set_xticks(range(S)); ax.set_yticks(range(S))
+        ax.set_xticklabels(toks, rotation=90, fontsize=6)
+        ax.set_yticklabels(toks, fontsize=6)
+    fig.suptitle(f"Encoder layer {layer_idx} attention — '{german_sentence}'")
+    fig.tight_layout()
+
+    if wandb_log:
+        import wandb
+        wandb.init(project="DA6401_Assignment_3", name=f"{run_name}_attn", reinit=True)
+        wandb.log({"attention/heatmap": wandb.Image(fig)})
+        wandb.finish()
+    else:
+        plt.show()
+    plt.close(fig)
 
 
 if __name__ == "__main__":
