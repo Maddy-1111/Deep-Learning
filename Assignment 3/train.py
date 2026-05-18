@@ -89,7 +89,8 @@ def run_epoch(
     model.train(is_train)
     total_loss, n_batches = 0.0, 0
 
-    pbar = tqdm(data_iter, desc=f"epoch {epoch_num} {'train' if is_train else 'eval'}")
+    pbar = tqdm(data_iter, desc=f"epoch {epoch_num} {'train' if is_train else 'eval'}",
+                mininterval=60, miniters=200, leave=False, ncols=80)
     for src, tgt in pbar:
         src, tgt = src.to(device), tgt.to(device)
         tgt_in, tgt_out = tgt[:, :-1], tgt[:, 1:]
@@ -113,6 +114,7 @@ def run_epoch(
                         "grad_norm/W_K": layer0.W_K.weight.grad.norm().item(),
                         "step": run_epoch.global_step,
                     })
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
                 if scheduler is not None:
                     scheduler.step()
@@ -124,7 +126,8 @@ def run_epoch(
 
         if log_fn is not None and is_train:
             log_fn({"train/loss": loss.item(),
-                    "train/lr": optimizer.param_groups[0]["lr"]})
+                    "train/lr": optimizer.param_groups[0]["lr"],
+                    "step": run_epoch.global_step})
 
     return total_loss / max(n_batches, 1)
 
@@ -200,7 +203,8 @@ def evaluate_bleu(
     hyps, refs = [], []
 
     with torch.no_grad():
-        for src, tgt in tqdm(test_dataloader, desc="bleu"):
+        for src, tgt in tqdm(test_dataloader, desc="bleu",
+                              mininterval=30, leave=False, ncols=80):
             src, tgt = src.to(device), tgt.to(device)
             for i in range(src.size(0)):
                 src_i = src[i:i + 1]
@@ -276,18 +280,19 @@ def run_training_experiment(
 ) -> None:
     cfg = {
         "batch_size":   128,
-        "d_model":      512,
-        "N":            6,
+        "d_model":      256,
+        "N":            3,
         "num_heads":    8,
-        "d_ff":         2048,
-        "dropout":      0.1,
+        "d_ff":         1024,
+        "dropout":      0.3,
         "smoothing":    0.1,         # ABLATION 2.5: set 0.0 to disable
-        "warmup_steps": 4000,
-        "num_epochs":   20,
+        "warmup_steps": 1000,
+        "num_epochs":   15,
         "min_freq":     2,
         # Ablation toggles ─────────────────────────────────
         "use_noam":     True,        # ABLATION 2.1: False → fixed LR
         "fixed_lr":     1e-4,        # used when use_noam=False
+        "lr_scale":     0.5,         # multiplies the Noam base_lr (halves peak LR)
         "attn_scale":   True,        # ABLATION 2.2: False → no 1/√dk
         "pos_encoding": "sinusoidal",# ABLATION 2.4: "learned" alternative
     }
@@ -319,7 +324,7 @@ def run_training_experiment(
     ).to(device)
 
     if cfg["use_noam"]:
-        optimizer = torch.optim.Adam(model.parameters(), lr=1.0,
+        optimizer = torch.optim.Adam(model.parameters(), lr=cfg["lr_scale"],
                                      betas=(0.9, 0.98), eps=1e-9)
         scheduler = NoamScheduler(optimizer, d_model=cfg["d_model"],
                                   warmup_steps=cfg["warmup_steps"])
@@ -372,10 +377,13 @@ ABLATIONS: dict[str, dict] = {
 }
 
 
-def run_all_ablations(num_epochs: int = 20, project: str = "DA6401_Assignment_3") -> None:
-    """Train every ablation in ABLATIONS sequentially, each as its own W&B run."""
+def run_all_ablations(num_epochs: int = 20, project: str = "DA6401_Assignment_3", **common) -> None:
+    """Train every ablation in ABLATIONS sequentially, each as its own W&B run.
+
+    Extra kwargs (e.g. warmup_steps=1000) are applied to every run's config;
+    per-ablation overrides in ABLATIONS still take precedence."""
     for name, overrides in ABLATIONS.items():
-        cfg = {"num_epochs": num_epochs, **overrides}
+        cfg = {"num_epochs": num_epochs, **common, **overrides}
         print(f"\n=== ablation: {name}  (cfg={cfg}) ===")
         run_training_experiment(project=project, run_name=name, config=cfg)
 
