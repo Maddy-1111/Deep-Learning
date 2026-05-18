@@ -317,6 +317,7 @@ def run_training_experiment(
         "smoothing":    0.1,         # ABLATION 2.5: set 0.0 to disable
         "warmup_steps": 1000,
         "num_epochs":   15,
+        "wandb_log_epochs": None,    # if set, stop logging to W&B after this many epochs (training continues)
         "min_freq":     2,
         # Ablation toggles ─────────────────────────────────
         "use_noam":     True,        # ABLATION 2.1: False → fixed LR
@@ -368,17 +369,17 @@ def run_training_experiment(
 
     run_epoch.global_step = 0
     best_val = float("inf")
+    log_until = cfg["wandb_log_epochs"] if cfg["wandb_log_epochs"] is not None else cfg["num_epochs"]
     for epoch in range(cfg["num_epochs"]):
+        epoch_log_fn = log_fn if epoch < log_until else None
         train_loss = run_epoch(train_loader, model, loss_fn, optimizer, scheduler,
                                epoch_num=epoch, is_train=True, device=device,
-                               log_fn=log_fn)
+                               log_fn=epoch_log_fn)
         val_loss = run_epoch(val_loader, model, loss_fn, None, None,
-                             epoch_num=epoch, is_train=False, device=device)
+                             epoch_num=epoch, is_train=False, device=device,
+                             log_fn=epoch_log_fn)
 
         print(f"[epoch {epoch}] train={train_loss:.4f}  val={val_loss:.4f}")
-        if log_fn is not None:
-            log_fn({"epoch": epoch, "train/epoch_loss": train_loss,
-                    "val/epoch_loss": val_loss})
 
         if val_loss < best_val:
             best_val = val_loss
