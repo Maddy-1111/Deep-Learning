@@ -18,11 +18,15 @@ Mask convention: True = MASK OUT (set to -inf before softmax).
 
 import math
 import copy
+import os
 from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# Special-token indices (kept in sync with dataset.py to avoid a circular import).
+PAD_IDX, SOS_IDX, EOS_IDX = 1, 2, 3
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -259,20 +263,45 @@ class Decoder(nn.Module):
 # ══════════════════════════════════════════════════════════════════════
 
 class Transformer(nn.Module):
+    # === HOSTED WEIGHTS ============================================
+    # Upload your best checkpoint.pt to Google Drive and put the file ID here.
+    # Used only when the model is instantiated with no args (autograder path).
+    WEIGHTS_GDRIVE_ID: str = "REPLACE_WITH_YOUR_GDRIVE_FILE_ID"
+    WEIGHTS_LOCAL_PATH: str = "checkpoint.pt"
+    # ===============================================================
+
     def __init__(
         self,
-        src_vocab_size: int,
-        tgt_vocab_size: int,
-        d_model: int = 512,
-        N: int = 6,
+        src_vocab_size: Optional[int] = None,
+        tgt_vocab_size: Optional[int] = None,
+        d_model: int = 256,
+        N: int = 3,
         num_heads: int = 8,
-        d_ff: int = 2048,
-        dropout: float = 0.1,
+        d_ff: int = 1024,
+        dropout: float = 0.3,
         pos_encoding: str = "sinusoidal",   # ABLATION 2.4: "sinusoidal" | "learned"
         attn_scale: bool = True,            # ABLATION 2.2
+        max_decode_len: int = 100,
     ) -> None:
         super().__init__()
+
+        # Autograder path: no vocab sizes → download checkpoint and use its config.
+        auto_load = (src_vocab_size is None or tgt_vocab_size is None)
+        ckpt = self._download_and_load_checkpoint() if auto_load else None
+        if auto_load:
+            cfg = ckpt["model_config"]
+            src_vocab_size = cfg["src_vocab_size"]
+            tgt_vocab_size = cfg["tgt_vocab_size"]
+            d_model      = cfg["d_model"]
+            N            = cfg["N"]
+            num_heads    = cfg["num_heads"]
+            d_ff         = cfg["d_ff"]
+            dropout      = cfg["dropout"]
+            pos_encoding = cfg.get("pos_encoding", "sinusoidal")
+            attn_scale   = cfg.get("attn_scale", True)
+
         self.d_model = d_model
+        self.max_decode_len = max_decode_len
 
         self.src_embed = nn.Embedding(src_vocab_size, d_model)
         self.tgt_embed = nn.Embedding(tgt_vocab_size, d_model)
@@ -288,6 +317,33 @@ class Transformer(nn.Module):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
+
+        # Will be populated either by auto-load (below) or by the training script.
+        self.src_vocab = None
+        self.tgt_vocab = None
+        self._spacy_de = None
+
+        if auto_load:
+            self.load_state_dict(ckpt["model_state_dict"])
+            self.src_vocab = ckpt["src_vocab"]
+            self.tgt_vocab = ckpt["tgt_vocab"]
+            self._spacy_de = self._load_spacy_de()
+
+    # ── auto-load helpers ──────────────────────────────────────────
+
+    @classmethod
+    def _download_and_load_checkpoint(cls) -> dict:
+        if not os.path.exists(cls.WEIGHTS_LOCAL_PATH):
+            import gdown
+            url = f"https://drive.google.com/uc?id={cls.WEIGHTS_GDRIVE_ID}"
+            gdown.download(url, cls.WEIGHTS_LOCAL_PATH, quiet=False)
+        return torch.load(cls.WEIGHTS_LOCAL_PATH, map_location="cpu", weights_only=False)
+
+    @staticmethod
+    def _load_spacy_de():
+        import spacy
+        return spacy.load("de_core_news_sm",
+                          disable=["parser", "tagger", "ner", "lemmatizer"])
 
     def encode(self, src: torch.Tensor, src_mask: torch.Tensor) -> torch.Tensor:
         x = self.src_embed(src) * math.sqrt(self.d_model)
@@ -315,3 +371,45 @@ class Transformer(nn.Module):
     ) -> torch.Tensor:
         memory = self.encode(src, src_mask)
         return self.decode(memory, src_mask, tgt, tgt_mask)
+
+    # ── End-to-end inference (autograder entry point) ──────────────
+    @torch.no_grad()
+    def infer(self, german_sentence: str) -> str:
+        """Translate a single German sentence to English.
+
+        Tokenises with spaCy → encodes → greedy-decodes → detokenises.
+        Requires `self.src_vocab`, `self.tgt_vocab`, and `self._spacy_de`
+        to be populated (auto-load handles this; the training script
+        attaches them before calling save_checkpoint)."""
+        assert self.src_vocab is not None and self.tgt_vocab is not None, \
+            "Vocab not loaded — instantiate Transformer() to auto-load weights+vocabs."
+        if self._spacy_de is None:
+            self._spacy_de = self._load_spacy_de()
+
+        device = next(self.parameters()).device
+        self.eval()
+
+        # tokenize + encode
+        toks = [t.text.lower() for t in self._spacy_de.tokenizer(german_sentence)]
+        ids = [SOS_IDX] + [self.src_vocab.stoi.get(t, 0) for t in toks] + [EOS_IDX]
+        src = torch.tensor([ids], dtype=torch.long, device=device)
+        src_mask = make_src_mask(src, PAD_IDX)
+
+        # greedy decode
+        memory = self.encode(src, src_mask)
+        ys = torch.tensor([[SOS_IDX]], dtype=torch.long, device=device)
+        for _ in range(self.max_decode_len - 1):
+            tgt_mask = make_tgt_mask(ys, PAD_IDX)
+            logits = self.decode(memory, src_mask, ys, tgt_mask)
+            nxt = logits[:, -1, :].argmax(-1, keepdim=True)
+            ys = torch.cat([ys, nxt], dim=1)
+            if nxt.item() == EOS_IDX:
+                break
+
+        # detokenize
+        out_tokens = []
+        for i in ys[0, 1:].tolist():        # skip <sos>
+            if i == EOS_IDX:
+                break
+            out_tokens.append(self.tgt_vocab.lookup_token(i))
+        return " ".join(out_tokens)

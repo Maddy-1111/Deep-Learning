@@ -106,8 +106,10 @@ def run_epoch(
             if is_train:
                 optimizer.zero_grad()
                 loss.backward()
-                # ABLATION 2.2 — Q/K grad norms (logged for the first 1k steps).
-                if log_fn is not None and run_epoch.global_step < 1000:
+                # ABLATION 2.2 — Q/K grad norms, sampled every 50 steps (first 1k).
+                if (log_fn is not None
+                        and run_epoch.global_step < 1000
+                        and run_epoch.global_step % 50 == 0):
                     layer0 = model.encoder.layers[0].self_attn
                     log_fn({
                         "grad_norm/W_Q": layer0.W_Q.weight.grad.norm().item(),
@@ -120,16 +122,20 @@ def run_epoch(
                     scheduler.step()
                 run_epoch.global_step += 1
 
-        total_loss += loss.item()
+        loss_val = loss.item()                         # single GPU→CPU sync per batch
+        total_loss += loss_val
         n_batches += 1
-        pbar.set_postfix(loss=f"{loss.item():.4f}")
+        pbar.set_postfix(loss=f"{loss_val:.4f}")
 
-        if log_fn is not None and is_train:
-            log_fn({"train/loss": loss.item(),
-                    "train/lr": optimizer.param_groups[0]["lr"],
-                    "step": run_epoch.global_step})
-
-    return total_loss / max(n_batches, 1)
+    avg_loss = total_loss / max(n_batches, 1)
+    # ONE wandb call per epoch instead of per-batch (the big speedup).
+    if log_fn is not None:
+        log_fn({
+            f"{'train' if is_train else 'val'}/epoch_loss": avg_loss,
+            "train/lr": optimizer.param_groups[0]["lr"] if optimizer is not None else 0,
+            "epoch": epoch_num,
+        })
+    return avg_loss
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -250,6 +256,8 @@ def save_checkpoint(
         "optimizer_state_dict": optimizer.state_dict() if optimizer is not None else None,
         "scheduler_state_dict": scheduler.state_dict() if scheduler is not None else None,
         "model_config":         _extract_model_config(model),
+        "src_vocab":            getattr(model, "src_vocab", None),
+        "tgt_vocab":            getattr(model, "tgt_vocab", None),
     }, path)
 
 
@@ -322,6 +330,9 @@ def run_training_experiment(
         pos_encoding=cfg["pos_encoding"],
         attn_scale=cfg["attn_scale"],
     ).to(device)
+    # Attach so save_checkpoint persists them for autograder Transformer().infer().
+    model.src_vocab = src_vocab
+    model.tgt_vocab = tgt_vocab
 
     if cfg["use_noam"]:
         optimizer = torch.optim.Adam(model.parameters(), lr=cfg["lr_scale"],

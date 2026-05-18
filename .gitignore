@@ -3,3 +3,4 @@ __pycache__/
 dl_env/
 dataset/
 *.pth
+*temp/
