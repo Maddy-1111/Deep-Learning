@@ -266,7 +266,7 @@ class Transformer(nn.Module):
     # === HOSTED WEIGHTS ============================================
     # Upload your best checkpoint.pt to Google Drive and put the file ID here.
     # Used only when the model is instantiated with no args (autograder path).
-    WEIGHTS_GDRIVE_ID: str = "1Q-QW_5r4YA4AZ8u2g_8ziBsBVGDHoeCh"
+    WEIGHTS_GDRIVE_ID: str = "1vFIFGXGlAD3RCYdOwrWyltMp2_Rie1I6"
     WEIGHTS_LOCAL_PATH: str = "checkpoint.pt"
     # ===============================================================
 
