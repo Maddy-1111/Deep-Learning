@@ -1,8 +1,8 @@
-# DA6401 - Assignment 3: Implementing the Transformer for Machine Translation
+# Assignment 3: Implementing the Transformer for Machine Translation
 
-## Overview
-
-In this assignment, you will implement the landmark architecture from the paper "Attention Is All You Need" from scratch using PyTorch. The goal is to develop a Neural Machine Translation (NMT) system capable of translating text from German to English using the Multi30k dataset.
+**Links:**
+- [GitHub Repository](https://github.com/Maddy-1111/Deep-Learning)
+- [WandB Project](https://api.wandb.ai/links/ee23b040-indian-institute-of-technology-madras/pothu3n3)
 
 ## Project Structure
 
